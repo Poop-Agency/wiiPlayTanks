@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,7 +16,7 @@
       height: 100vh;
       color: white;
     }
-    
+
     #menu {
       text-align: center;
       background: rgba(0, 0, 0, 0.8);
@@ -23,14 +24,14 @@
       border-radius: 15px;
       box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
     }
-    
+
     h1 {
       font-size: 3em;
       margin-bottom: 30px;
       text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
       color: #ffd700;
     }
-    
+
     .player-section {
       margin: 20px 0;
       padding: 20px;
@@ -38,12 +39,12 @@
       border-radius: 10px;
       background: rgba(255, 255, 255, 0.1);
     }
-    
+
     .player-section h2 {
       margin-top: 0;
       color: #ffd700;
     }
-    
+
     button {
       background: linear-gradient(45deg, #4CAF50, #45a049);
       color: white;
@@ -56,63 +57,63 @@
       transition: all 0.3s;
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
-    
+
     button:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
     }
-    
+
     button.disconnect {
       background: linear-gradient(45deg, #f44336, #d32f2f);
     }
-    
+
     button.disconnect:hover {
       background: linear-gradient(45deg, #d32f2f, #b71c1c);
     }
-    
+
     button.takeover {
       background: linear-gradient(45deg, #ff9800, #f57c00);
     }
-    
+
     button.takeover:hover {
       background: linear-gradient(45deg, #f57c00, #ef6c00);
     }
-    
+
     button:disabled {
       background: #666;
       cursor: not-allowed;
       transform: none;
     }
-    
+
     .status {
       margin: 10px 0;
       padding: 10px;
       border-radius: 5px;
       font-weight: bold;
     }
-    
+
     .waiting {
       background: rgba(255, 193, 7, 0.3);
       color: #ffc107;
     }
-    
+
     .connected {
       background: rgba(76, 175, 80, 0.3);
       color: #4caf50;
     }
-    
+
     .spectator {
       background: rgba(156, 39, 176, 0.3);
       color: #9c27b0;
     }
-    
+
     canvas {
       display: none;
       border: 3px solid #ffd700;
       background: linear-gradient(45deg, #8FBC8F, #90EE90);
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
     }
-    
+
     #gameInfo {
       position: absolute;
       top: 20px;
@@ -124,7 +125,7 @@
       font-size: 14px;
       display: none;
     }
-    
+
     #stopGameBtn {
       background: linear-gradient(45deg, #f44336, #d32f2f);
       color: white;
@@ -135,34 +136,35 @@
       cursor: pointer;
       transition: all 0.3s;
     }
-    
+
     #stopGameBtn:hover {
       background: linear-gradient(45deg, #d32f2f, #b71c1c);
       transform: translateY(-1px);
     }
   </style>
 </head>
+
 <body>
   <div id="menu">
     <h1>🎮 TANKS 🎮</h1>
     <p>Style Wii Play</p>
-    
+
     <div class="player-section">
       <h2>👤 Joueur 1</h2>
       <button id="joinP1">Rejoindre comme Joueur 1</button>
       <div id="statusP1" class="status waiting">En attente...</div>
     </div>
-    
+
     <div class="player-section">
       <h2>👤 Joueur 2</h2>
       <button id="joinP2">Rejoindre comme Joueur 2</button>
       <div id="statusP2" class="status waiting">En attente...</div>
     </div>
-    
+
     <div id="connectionStatus" class="status waiting">Connexion au serveur...</div>
   </div>
-  
-  <canvas width="800" height="600"></canvas>
+
+  <canvas width="800" height="448"></canvas>
   <div id="gameInfo">
     <div>Rôle: <span id="playerRole">-</span></div>
     <div>Joueurs connectés: <span id="playersCount">0</span>/2</div>
@@ -170,9 +172,11 @@
     <div>Balles restantes: <span id="remainingBullets">4</span>/4</div>
     <div>Temps de jeu: <span id="gameTime">5:00</span></div>
     <button id="stopGameBtn" style="display: none; margin-top: 10px;">Arrêter la partie</button>
-    <button id="nextLevelBtn" style="margin-top: 10px; background: linear-gradient(45deg, #2196F3, #1976D2);">Niveau suivant</button>
+    <button id="nextLevelBtn" style="margin-top: 10px; background: linear-gradient(45deg, #2196F3, #1976D2);">Niveau
+      suivant</button>
   </div>
-  
+
   <script type="module" src="./dist/main.js"></script>
 </body>
+
 </html>
