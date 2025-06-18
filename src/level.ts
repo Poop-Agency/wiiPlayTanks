@@ -26,6 +26,13 @@ export interface Enemy {
   direction: number;
 }
 
+export interface Hole {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface Level {
   id: number;
   walls: Wall[];
@@ -33,7 +40,9 @@ export interface Level {
   dimensions?: { width: number; height: number };
   indestructibleWalls?: BlockPosition[]; // Murs incassables en coordonnées de blocs
   destructibleWalls?: BlockPosition[]; // Murs cassables en coordonnées de blocs
-  playerSpawn?: BlockPosition; // Position d'apparition du joueur en blocs
+  holes?: BlockPosition[]; // Trous en coordonnées de blocs (bloquent les tanks mais pas les balles)
+  playerSpawn?: BlockPosition; // Position d'apparition du joueur 1 en blocs
+  player2Spawn?: BlockPosition; // Position d'apparition du joueur 2 en blocs
 }
 
 // Fonctions utilitaires pour convertir entre blocs et pixels
@@ -82,9 +91,9 @@ const levels: Level[] = [{
   destructibleWalls: [
     { x: 12, y: 5 },
     { x: 12, y: 6 }
-  ],
-  // Position d'apparition du joueur (en coordonnées de blocs)
-  playerSpawn: { x: 3, y: 5 }
+  ],  // Position d'apparition du joueur (en coordonnées de blocs)
+  playerSpawn: { x: 3, y: 8 },
+  player2Spawn: { x: 3, y: 3 }
 },
 {
   id: 2,
@@ -93,8 +102,8 @@ const levels: Level[] = [{
     type: "grey",
     x: null,
     y: null,
-    blockX: 21,
-    blockY: 3,
+    blockX: 11,
+    blockY: 8,
     direction: 0
   }],
   dimensions: { width: 26 * BLOCK_SIZE, height: 17 * BLOCK_SIZE }, // 24x15 blocs (+ 2 bordures)
@@ -113,27 +122,67 @@ const levels: Level[] = [{
     { x: 7, y: 10 }, { x: 8, y: 10 }, { x: 9, y: 10 }, { x: 10, y: 10 },
     // Ligne de (13,5) à (16,5)
     { x: 13, y: 5 }, { x: 14, y: 5 }, { x: 15, y: 5 }, { x: 16, y: 5 }
-  ],
-  // Position d'apparition du joueur (en coordonnées de blocs)
-  playerSpawn: { x: 3, y: 23 }
+  ],  // Position d'apparition du joueur (en coordonnées de blocs)
+  playerSpawn: { x: 3, y: 13 },
+  player2Spawn: { x: 22, y: 3 }
 },
 {
   id: 3,
   walls: [],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }, // 23x17 blocs (+ 2 bordures)
   enemies: [
-    { type: "grey", x: 200, y: 100, direction: 0 },
-    { type: "grey", x: 600, y: 100, direction: 0 },
-    { type: "brown", x: 400, y: 200, direction: 0 }
-  ]
+    { type: "grey", x: null, y: null, blockX: 6, blockY: 2, direction: 0 },
+    { type: "grey", x: null, y: null, blockX: 19, blockY: 15, direction: 0 },
+    { type: "brown", x: null, y: null, blockX: 20, blockY: 9, direction: 0 }
+  ],
+  indestructibleWalls: [
+    { x: 4, y: 4 }, { x: 5, y: 4 },
+    { x: 18, y: 14 }, { x: 19, y: 14 },
+    { x: 12, y: 4 }, { x: 12, y: 5 }, { x: 12, y: 6 }, { x: 12, y: 7 }, { x: 12, y: 8 }, { x: 12, y: 9 },
+    { x: 11, y: 9 }, { x: 11, y: 10 }, { x: 11, y: 11 }, { x: 11, y: 12 }, { x: 11, y: 13 }, { x: 11, y: 14 },
+  ],
+  destructibleWalls: [
+    { x: 6, y: 4 }, { x: 7, y: 4 }, { x: 8, y: 4 }, { x: 9, y: 4 }, { x: 10, y: 4 }, { x: 11, y: 4 },
+    { x: 12, y: 14 }, { x: 13, y: 14 }, { x: 14, y: 14 }, { x: 15, y: 14 }, { x: 16, y: 14 }, { x: 17, y: 14 }
+  ],
+  playerSpawn: { x: 9, y: 15 }, // Position d'apparition du joueur 1 (en coordonnées de blocs)
+  player2Spawn: { x: 2, y: 6 }, // Position d'apparition du joueur 2 (en coordonnées de blocs)
 },
 {
   id: 4,
-  walls: [],
+  walls: [], // Les murs seront générés à partir des positions de blocs
   enemies: [
-    { type: "grey", x: 150, y: 120, direction: 0 },
-    { type: "grey", x: 650, y: 120, direction: 0 },
-    { type: "brown", x: 400, y: 300, direction: 0 }
-  ]
+    { type: "grey", x: null, y: null, blockX: 12, blockY: 3, direction: 0 },
+    { type: "grey", x: null, y: null, blockX: 12, blockY: 15, direction: 0 },
+    { type: "brown", x: null, y: null, blockX: 4, blockY: 3, direction: 0 },
+    { type: "brown", x: null, y: null, blockX: 19, blockY: 15, direction: 0 }
+  ],
+  dimensions: { width: 24 * BLOCK_SIZE, height: 18 * BLOCK_SIZE }, // 24x16 blocs
+  // Trous - bloquent les tanks mais pas les balles
+  holes: [
+    // 1,6 to 6,6
+    { x: 1, y: 6 }, { x: 2, y: 6 }, { x: 3, y: 6 }, { x: 4, y: 6 }, { x: 5, y: 6 }, { x: 6, y: 6 },
+    // 1,12 to 13,12
+    { x: 1, y: 12 }, { x: 2, y: 12 }, { x: 3, y: 12 }, { x: 4, y: 12 }, { x: 5, y: 12 },
+    { x: 6, y: 12 }, { x: 7, y: 12 }, { x: 8, y: 12 }, { x: 9, y: 12 }, { x: 10, y: 12 },
+    { x: 11, y: 12 }, { x: 12, y: 12 }, { x: 13, y: 12 },
+    // 8,1 to 8,10
+    { x: 8, y: 1 }, { x: 8, y: 2 }, { x: 8, y: 3 }, { x: 8, y: 4 }, { x: 8, y: 5 },
+    { x: 8, y: 6 }, { x: 8, y: 7 }, { x: 8, y: 8 }, { x: 8, y: 9 }, { x: 8, y: 10 },
+    // 8,14 to 8,16
+    { x: 8, y: 14 }, { x: 8, y: 15 }, { x: 8, y: 16 },
+    // 10,6 to 22,6
+    { x: 10, y: 6 }, { x: 11, y: 6 }, { x: 12, y: 6 }, { x: 13, y: 6 }, { x: 14, y: 6 }, { x: 15, y: 6 }, { x: 16, y: 6 }, { x: 17, y: 6 }, { x: 18, y: 6 }, { x: 19, y: 6 }, { x: 20, y: 6 }, { x: 21, y: 6 }, { x: 22, y: 6 },
+    // 15,1 to 15,4
+    { x: 15, y: 1 }, { x: 15, y: 2 }, { x: 15, y: 3 }, { x: 15, y: 4 },
+    // 15,8 to 15,16
+    { x: 15, y: 8 }, { x: 15, y: 9 }, { x: 15, y: 10 }, { x: 15, y: 11 }, { x: 15, y: 12 }, { x: 15, y: 13 }, { x: 15, y: 14 }, { x: 15, y: 15 }, { x: 15, y: 16 },
+    // 17,12 to 22,12
+    { x: 17, y: 12 }, { x: 18, y: 12 }, { x: 19, y: 12 }, { x: 20, y: 12 }, { x: 21, y: 12 }, { x: 22, y: 12 }
+  ],
+  // Positions d'apparition des joueurs
+  playerSpawn: { x: 20, y: 3 },
+  player2Spawn: { x: 3, y: 15 }
 },
 {
   id: 5,
@@ -392,11 +441,34 @@ function generateLevelWalls(level: Level): Wall[] {
   return levelWalls;
 }
 
+// Fonction pour générer les trous du niveau à partir des positions de blocs
+function generateLevelHoles(level: Level): Hole[] {
+  const levelHoles: Hole[] = [];
+
+  // Ajouter les trous définis dans le niveau
+  if (level.holes) {
+    for (const blockPos of level.holes) {
+      const pixelPos = blockPositionToPixels(blockPos);
+      levelHoles.push({
+        x: pixelPos.x,
+        y: pixelPos.y,
+        w: BLOCK_SIZE,
+        h: BLOCK_SIZE
+      });
+    }
+  }
+
+  return levelHoles;
+}
+
 // Murs de bordure générés aléatoirement
 let BORDER_WALLS: Wall[] = generateBorderWalls(currentLevel);
 
 // Export des murs (bordures + murs du niveau actuel)
 export const walls: Wall[] = [...BORDER_WALLS, ...generateLevelWalls(currentLevel)];
+
+// Export des trous du niveau actuel
+export const holes: Hole[] = generateLevelHoles(currentLevel);
 
 // Fonction pour obtenir la position de spawn du joueur
 export function getPlayerSpawn(): [number, number] {
@@ -413,12 +485,25 @@ export function getPlayerSpawn(): [number, number] {
 // Positions de spawn fixes pour les joueurs (compatibilité avec l'ancien système)
 export function getPlayerSpawns(): { player1: [number, number], player2: [number, number] } {
   const level = getCurrentLevel();
-  const arenaWidth = level.dimensions?.width || 800;
-  const arenaHeight = level.dimensions?.height || 600;
+
+  // Position du joueur 1
+  const player1Spawn = getPlayerSpawn();
+
+  // Position du joueur 2 - utilise player2Spawn du niveau si disponible
+  let player2Spawn: [number, number];
+  if (level.player2Spawn) {
+    const pixelPos = blockPositionToPixels(level.player2Spawn);
+    player2Spawn = [pixelPos.x + BLOCK_SIZE / 2, pixelPos.y + BLOCK_SIZE / 2];
+  } else {
+    // Position par défaut si pas définie dans le niveau
+    const arenaWidth = level.dimensions?.width || 800;
+    const arenaHeight = level.dimensions?.height || 600;
+    player2Spawn = [arenaWidth - 2 * BLOCK_SIZE + BLOCK_SIZE / 2, arenaHeight - 2 * BLOCK_SIZE + BLOCK_SIZE / 2];
+  }
 
   return {
-    player1: getPlayerSpawn(),
-    player2: [arenaWidth - 2 * BLOCK_SIZE + BLOCK_SIZE / 2, arenaHeight - 2 * BLOCK_SIZE + BLOCK_SIZE / 2] as [number, number]
+    player1: player1Spawn,
+    player2: player2Spawn
   };
 }
 
@@ -461,6 +546,10 @@ export function nextLevel(): boolean {
     walls.length = 0;
     walls.push(...BORDER_WALLS, ...generateLevelWalls(currentLevel));
 
+    // Mettre à jour les trous
+    holes.length = 0;
+    holes.push(...generateLevelHoles(currentLevel));
+
     return true;
   }
   return false; // Pas de niveau suivant
@@ -476,6 +565,10 @@ export function previousLevel(): boolean {
     BORDER_WALLS = generateBorderWalls(currentLevel);
     walls.length = 0;
     walls.push(...BORDER_WALLS, ...generateLevelWalls(currentLevel));
+
+    // Mettre à jour les trous
+    holes.length = 0;
+    holes.push(...generateLevelHoles(currentLevel));
 
     return true;
   }
@@ -493,6 +586,10 @@ export function goToLevel(levelNumber: number): boolean {
     BORDER_WALLS = generateBorderWalls(currentLevel);
     walls.length = 0;
     walls.push(...BORDER_WALLS, ...generateLevelWalls(currentLevel));
+
+    // Mettre à jour les trous
+    holes.length = 0;
+    holes.push(...generateLevelHoles(currentLevel));
 
     return true;
   }
@@ -550,6 +647,32 @@ export function drawLevel(ctx: CanvasRenderingContext2D) {
         }
       }
     }
+  }
+
+  // Dessiner les trous
+  for (const hole of holes) {
+    // Ombre du trou (effet de profondeur)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(hole.x + 2, hole.y + 2, hole.w - 4, hole.h - 4);
+
+    // Fond du trou (très sombre)
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(hole.x + 3, hole.y + 3, hole.w - 6, hole.h - 6);
+
+    // Bordure du trou
+    ctx.strokeStyle = '#333333';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(hole.x, hole.y, hole.w, hole.h);
+
+    // Effet de gradient pour simuler la profondeur
+    const gradient = ctx.createRadialGradient(
+      hole.x + hole.w / 2, hole.y + hole.h / 2, 2,
+      hole.x + hole.w / 2, hole.y + hole.h / 2, hole.w / 2
+    );
+    gradient.addColorStop(0, '#000000');
+    gradient.addColorStop(1, '#333333');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(hole.x + 1, hole.y + 1, hole.w - 2, hole.h - 2);
   }
 
   // Ajouter quelques détails décoratifs
@@ -638,4 +761,18 @@ export function destroyWallsInRadius(centerX: number, centerY: number, radius: n
   }
 
   return destroyedCount;
+}
+
+// Fonction pour vérifier si une position est dans un trou (pour bloquer les tanks)
+export function isPositionInHole(x: number, y: number, width: number = BLOCK_SIZE, height: number = BLOCK_SIZE): boolean {
+  for (const hole of holes) {
+    // Vérifier si les rectangles se chevauchent
+    if (x < hole.x + hole.w &&
+      x + width > hole.x &&
+      y < hole.y + hole.h &&
+      y + height > hole.y) {
+      return true;
+    }
+  }
+  return false;
 }

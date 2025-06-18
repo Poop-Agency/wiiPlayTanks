@@ -1,7 +1,7 @@
 // src/tank.ts
 import { Bullet } from "./bullet.js";
 import { FRAME_SPEEDS } from "./constants.js";
-import { walls, BLOCK_SIZE, getCurrentLevel } from "./level.js";
+import { walls, BLOCK_SIZE, getCurrentLevel, isPositionInHole } from "./level.js";
 
 export class Tank {
   x: number;
@@ -169,6 +169,11 @@ export class Tank {
         y - halfHeight < wall.y + wall.h) {
         return false;
       }
+    }
+
+    // Vérifier collision avec les trous (le tank ne peut pas traverser)
+    if (isPositionInHole(x - halfWidth, y - halfHeight, this.width, this.height)) {
+      return false;
     }
 
     return true;
