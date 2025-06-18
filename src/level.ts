@@ -187,10 +187,20 @@ const levels: Level[] = [{
 {
   id: 5,
   walls: [],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 17 * BLOCK_SIZE }, // 25x17 blocs
   enemies: [
-    { type: "teal", x: 300, y: 200, direction: 0 },
-    { type: "teal", x: 500, y: 200, direction: 0 }
-  ]
+    { type: "teal", x: null, y: null, blockX: 11, blockY: 7, direction: 0 },
+    { type: "teal", x: null, y: null, blockX: 13, blockY: 8, direction: 0 },
+  ],
+  indestructibleWalls: [
+    { x: 4, y: 11 }, { x: 20, y: 5 },
+  ],
+  destructibleWalls: [
+    { x: 4, y: 12 }, { x: 3, y: 11 },
+    { x: 20, y: 4 }, { x: 21, y: 5 }
+  ],
+  playerSpawn: { x: 2, y: 12 }, // Position d'apparition du joueur 1 (en coordonnées de blocs)
+  player2Spawn: { x: 22, y: 4 }, // Position d'apparition du joueur 2 (en coordonnées de blocs)
 },
 {
   id: 6,
@@ -771,6 +781,8 @@ export function isPositionInHole(x: number, y: number, width: number = BLOCK_SIZ
       x + width > hole.x &&
       y < hole.y + hole.h &&
       y + height > hole.y) {
+      // Debug pour comprendre le problème
+      console.log(`Collision trou détectée: Tank(${x}, ${y}, ${width}x${height}) vs Hole(${hole.x}, ${hole.y}, ${hole.w}x${hole.h})`);
       return true;
     }
   }

@@ -169,10 +169,10 @@ export class Tank {
         y - halfHeight < wall.y + wall.h) {
         return false;
       }
-    }
-
-    // Vérifier collision avec les trous (le tank ne peut pas traverser)
-    if (isPositionInHole(x - halfWidth, y - halfHeight, this.width, this.height)) {
+    }    // Vérifier collision avec les trous (le tank ne peut pas traverser)
+    // Utiliser une détection plus permissive pour permettre de "frôler" les trous
+    const margin = 4; // Marge plus importante pour permettre le passage
+    if (isPositionInHole(x - halfWidth + margin, y - halfHeight + margin, this.width - 2 * margin, this.height - 2 * margin)) {
       return false;
     }
 
