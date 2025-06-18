@@ -2,7 +2,7 @@
 import { Tank } from "./tank.js";
 import { Bullet } from "./bullet.js";
 import { setupControls, updateControls } from "./controls.js";
-import { drawLevel, walls, getPlayerSpawns, nextLevel, getCurrentLevelNumber, getTotalLevels, getEnemies } from "./level.js";
+import { drawLevel, walls, getPlayerSpawns, nextLevel, getCurrentLevelNumber, getTotalLevels, getEnemies, resetToFirstLevel } from "./level.js";
 import { Enemy } from "./enemy.js";
 import { Role, MoveMessage, ShootMessage, EnemyMoveMessage, EnemyShootMessage, EnemyDeathMessage } from "./types.js";
 
@@ -14,24 +14,41 @@ const bullets: Bullet[] = [];
 const player1Bullets: Bullet[] = []; // Balles du joueur 1
 const player2Bullets: Bullet[] = []; // Balles du joueur 2
 const MAX_BULLETS_PER_PLAYER = 4; // Limite de balles par joueur
-const GAME_TIMEOUT_MINUTES = 1; // Temps limite en minutes (paramètre modifiable)
+const GAME_TIMEOUT_MINUTES = 10; // Temps limite en minutes (paramètre modifiable)
 let gameRole: Role = 'spectator';
 let websocket: WebSocket | null = null;
 let lastSentTime = 0;
 let lastCannonSentTime = 0;
 let gameStartTime = 0; // Timestamp du début de partie
+let gameLoopId = 0; // ID de la boucle de jeu pour pouvoir l'arrêter
+let gameRunning = false; // Flag pour savoir si le jeu tourne
 const NETWORK_UPDATE_INTERVAL = 50; // 20 FPS pour les mises à jour de position
 const CANNON_UPDATE_INTERVAL = 16; // ~60 FPS pour les mises à jour de visée (plus fluide)
 
 export function startGame(canvas: HTMLCanvasElement, role: Role, ws: WebSocket) {
+  // Arrêter la boucle de jeu précédente si elle existe
+  if (gameRunning && gameLoopId) {
+    cancelAnimationFrame(gameLoopId);
+    console.log('Boucle de jeu précédente arrêtée');
+  }
+  
   ctx = canvas.getContext("2d")!;
   gameRole = role;
   websocket = ws;
   gameStartTime = Date.now(); // Enregistrer le début de partie
-
+  gameRunning = true; // Marquer le jeu comme actif
   // Configuration du canvas
-  canvas.width = 800;
+  canvas.width = 736;
   canvas.height = 600;
+  
+  // IMPORTANT: Remettre le jeu au niveau 1 (nouvelle partie)
+  resetToFirstLevel();
+  
+  // Réinitialiser complètement toutes les variables globales
+  bullets.length = 0;
+  player1Bullets.length = 0;
+  player2Bullets.length = 0;
+  enemies.length = 0;
   
   // Créer les tanks avec des couleurs distinctes style Wii Play
   const spawns = getPlayerSpawns();
@@ -42,11 +59,12 @@ export function startGame(canvas: HTMLCanvasElement, role: Role, ws: WebSocket) 
   initializeEnemies();
 
   setupControls();
-  
-  // Exposer la fonction de gestion des messages
+    // Exposer la fonction de gestion des messages
   window.handleGameMessage = handleNetworkMessage;
   
-  requestAnimationFrame(gameLoop);
+  // Démarrer la boucle de jeu
+  gameLoopId = requestAnimationFrame(gameLoop);
+  console.log('Nouvelle boucle de jeu démarrée, ID:', gameLoopId);
 }
 
 function handleNetworkMessage(data: any) {
@@ -84,31 +102,42 @@ function handleNetworkMessage(data: any) {
       bullets.push(bullet);
       shooterBullets.push(bullet);
       break;
-      
-    case 'enemyMove':
+        case 'enemyMove':
       const enemyMoveMsg = data as EnemyMoveMessage;
+      console.log(`[${gameRole}] Reçu enemyMove pour ennemi ${enemyMoveMsg.enemyId}:`, enemyMoveMsg);
       const enemyToMove = enemies.find(e => e.id === enemyMoveMsg.enemyId);
       if (enemyToMove) {
+        console.log(`[${gameRole}] Mise à jour position ennemi ${enemyMoveMsg.enemyId}: (${enemyMoveMsg.x}, ${enemyMoveMsg.y})`);
         enemyToMove.updateFromNetwork(
           enemyMoveMsg.x,
           enemyMoveMsg.y,
           enemyMoveMsg.direction,
           enemyMoveMsg.cannonDirection
         );
+      } else {
+        console.log(`[${gameRole}] Ennemi ${enemyMoveMsg.enemyId} non trouvé dans la liste:`, enemies.map(e => e.id));
       }
       break;
-      
     case 'enemyShoot':
       const enemyShootMsg = data as EnemyShootMessage;
+      console.log(`[${gameRole}] Reçu enemyShoot pour ennemi ${enemyShootMsg.enemyId}:`, enemyShootMsg);
       const enemyToShoot = enemies.find(e => e.id === enemyShootMsg.enemyId);
       if (enemyToShoot) {
-        enemyToShoot.shootFromNetwork(
+        console.log(`[${gameRole}] Création balle pour ennemi ${enemyShootMsg.enemyId}`);
+        const newBullet = enemyToShoot.shootFromNetwork(
           enemyShootMsg.x,
           enemyShootMsg.y,
           enemyShootMsg.cannonDirection,
           enemyShootMsg.bulletSpeed,
           enemyShootMsg.bulletColor
         );
+        // Ajouter la balle à la liste principale si elle a été créée
+        if (newBullet && !bullets.includes(newBullet)) {
+          bullets.push(newBullet);
+          console.log(`[${gameRole}] Balle d'ennemi ajoutée à la liste principale`);
+        }
+      } else {
+        console.log(`[${gameRole}] Ennemi ${enemyShootMsg.enemyId} non trouvé pour tir`);
       }
       break;
       
@@ -117,14 +146,24 @@ function handleNetworkMessage(data: any) {
       const enemyIndex = enemies.findIndex(e => e.id === enemyDeathMsg.enemyId);
       if (enemyIndex !== -1) {
         enemies.splice(enemyIndex, 1);
-        
-        // Vérifier si tous les ennemis sont éliminés
+          // Vérifier si tous les ennemis sont éliminés
         if (enemies.length === 0) {
           setTimeout(() => {
             goToNextLevel();
           }, 1000);
         }
+      } else {
+        console.log(`[${gameRole}] Ennemi ${enemyDeathMsg.enemyId} non trouvé pour suppression`);
       }
+      break;
+      
+    case 'levelChanged':
+      const levelChangeMsg = data as any;
+      console.log(`[${gameRole}] Niveau changé vers ${levelChangeMsg.levelNumber}`);
+      // Réinitialiser les ennemis pour s'assurer de la synchronisation
+      setTimeout(() => {
+        initializeEnemies();
+      }, 100); // Petit délai pour s'assurer que le niveau est bien changé
       break;
   }
 }
@@ -209,7 +248,7 @@ function gameLoop() {
     }
     
     // Supprimer les bullets hors écran
-    if (bullet.x < 0 || bullet.x > 800 || bullet.y < 0 || bullet.y > 600) {
+    if (bullet.x < 0 || bullet.x > 736 || bullet.y < 0 || bullet.y > 600) {
       bullets.splice(index, 1);
       removeBulletFromPlayer(bullet);
       return;
@@ -218,8 +257,7 @@ function gameLoop() {
     // Vérifier collision avec les tanks
     if (checkBulletTankCollision(bullet, index)) {
       removeBulletFromPlayer(bullet);
-    }  });
-    // Mettre à jour les ennemis
+    }  });  // Mettre à jour les ennemis
   const playerTanks = [player1, player2];
   enemies.forEach((enemy, enemyIndex) => {
     // Seul le player1 contrôle l'IA et envoie les updates réseau
@@ -230,7 +268,7 @@ function gameLoop() {
       enemy.update(playerTanks, 16); // 16ms = ~60fps
     }
     
-    // Ajouter les balles des ennemis à la liste principale
+    // Ajouter les nouvelles balles des ennemis à la liste principale
     enemy.getBullets().forEach(enemyBullet => {
       if (!bullets.includes(enemyBullet)) {
         bullets.push(enemyBullet);
@@ -283,11 +321,13 @@ function gameLoop() {
 
   // Mettre à jour les informations de l'interface
   updateGameInfo();
-
   // Dessiner tout
   drawGame();
   
-  requestAnimationFrame(gameLoop);
+  // Continuer la boucle seulement si le jeu est actif
+  if (gameRunning) {
+    gameLoopId = requestAnimationFrame(gameLoop);
+  }
 }
 
 function checkBulletTankCollision(bullet: Bullet, bulletIndex: number): boolean {
@@ -356,7 +396,7 @@ function drawGame() {
   gradient.addColorStop(0, '#8FBC8F');
   gradient.addColorStop(1, '#90EE90');
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 800, 600);
+  ctx.fillRect(0, 0, 736, 600);
   
   // Dessiner le niveau
   drawLevel(ctx);
@@ -416,7 +456,6 @@ function drawUI() {
 
 function updateGameInfo() {
   // Mettre à jour les informations dans l'interface HTML
-  
   // Mettre à jour les informations de niveau
   updateLevelInfo();
   
@@ -492,9 +531,16 @@ export function goToNextLevel(): boolean {
     bullets.length = 0;
     player1Bullets.length = 0;
     player2Bullets.length = 0;
-    
-    // Réinitialiser les ennemis pour le nouveau niveau
+      // Réinitialiser les ennemis pour le nouveau niveau
     initializeEnemies();
+    
+    // Envoyer un message réseau pour synchroniser le changement de niveau
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      websocket.send(JSON.stringify({
+        type: 'levelChanged',
+        levelNumber: getCurrentLevelNumber()
+      }));
+    }
     
     // Mettre à jour l'UI avec le nouveau niveau
     updateLevelInfo();
@@ -578,29 +624,55 @@ function handleTimeExpired() {
 
 // Fonction pour initialiser les ennemis
 function initializeEnemies() {
+  // Vider complètement la liste des ennemis et réinitialiser
+  enemies.forEach(enemy => {
+    // Nettoyer les balles des ennemis de la liste principale
+    enemy.getBullets().forEach(bullet => {
+      const bulletIndex = bullets.indexOf(bullet);
+      if (bulletIndex !== -1) {
+        bullets.splice(bulletIndex, 1);
+      }
+    });
+  });
   enemies.length = 0; // Vider la liste des ennemis
   
   const levelEnemies = getEnemies();
   
   // Créer les ennemis seulement s'ils ont des positions valides
-  for (const enemyData of levelEnemies) {
+  for (let i = 0; i < levelEnemies.length; i++) {
+    const enemyData = levelEnemies[i];
     // Vérifier si l'ennemi a des coordonnées valides
     if (enemyData.x === null || enemyData.y === null) {
       console.log(`Ennemi ${enemyData.type} ignoré - pas de coordonnées définies`);
       continue; // Ignorer cet ennemi
-    }
-    
-    // Créer l'ennemi avec les coordonnées définies
+    }    // Créer un nouvel ennemi complètement frais
     const enemy = new Enemy(enemyData.x, enemyData.y, enemyData.type, enemyData.direction);
+    // Utiliser un ID déterministe basé sur l'index pour assurer la synchronisation
+    enemy.id = `${enemyData.type}_${i}_${getCurrentLevelNumber()}`;
+    
+    // Réinitialiser complètement l'ennemi AVANT de définir isNetworkControlled
+    enemy.reset();
     
     // Marquer les ennemis comme contrôlés par le réseau si on n'est pas player1
     if (gameRole !== 'player1') {
-      enemy.isNetworkControlled = true;
+      enemy.setNetworkControlled(true);
+    } else {
+      enemy.setNetworkControlled(false);
     }
     
     enemies.push(enemy);
-    console.log(`Ennemi ${enemyData.type} créé à (${enemyData.x}, ${enemyData.y})`);
+    console.log(`[${gameRole}] Ennemi ${enemyData.type} créé avec ID: ${enemy.id} à (${enemyData.x}, ${enemyData.y}) - NetworkControlled: ${enemy.isNetworkControlled}`);
   }
   
-  console.log(`Niveau ${getCurrentLevelNumber()}: ${enemies.length} ennemis créés sur ${levelEnemies.length} définis`);
+  console.log(`[${gameRole}] Niveau ${getCurrentLevelNumber()}: ${enemies.length} ennemis créés sur ${levelEnemies.length} définis`);
+  console.log(`[${gameRole}] IDs des ennemis:`, enemies.map(e => e.id));
+}
+
+// Fonction pour arrêter le jeu proprement
+export function stopGame() {
+  gameRunning = false;
+  if (gameLoopId) {
+    cancelAnimationFrame(gameLoopId);
+    console.log('Boucle de jeu arrêtée, ID:', gameLoopId);
+  }
 }

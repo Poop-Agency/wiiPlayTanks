@@ -1,5 +1,5 @@
 // src/main.ts
-import { startGame } from "./game.js";
+import { startGame, stopGame as stopGameLoop } from "./game.js";
 import { Role, RoleMessage, GameStateMessage } from "./types.js";
 
 let ws: WebSocket;
@@ -21,6 +21,7 @@ const playersCountSpan = document.getElementById('playersCount')!;
 const remainingBulletsSpan = document.getElementById('remainingBullets')!;
 const gameTimeSpan = document.getElementById('gameTime')!;
 const stopGameButton = document.getElementById('stopGameBtn')! as HTMLButtonElement;
+const newGameButton = document.getElementById('newGameBtn')! as HTMLButtonElement;
 const nextLevelButton = document.getElementById('nextLevelBtn')! as HTMLButtonElement;
 
 // Connexion WebSocket
@@ -95,13 +96,22 @@ function handleMessage(data: any) {
         alert(message + '\n\nRetour au menu...');
         returnToMenu();
       }      break;
-      
-    case 'nextLevel':
+        case 'nextLevel':
       // Un autre joueur a changé de niveau
       if (gameStarted && (window as any).goToNextLevel) {
         const nextLevelData = data as any;
         console.log(`Niveau changé par ${nextLevelData.initiator}`);
         (window as any).goToNextLevel();
+      }
+      break;
+      
+    case 'newGame':
+      // Un autre joueur a démarré une nouvelle partie
+      if (gameStarted) {
+        const newGameData = data as any;
+        console.log(`Nouvelle partie démarrée par ${newGameData.initiator}`);
+        // Redémarrer le jeu pour tous les joueurs
+        startGame(canvas, role, ws);
       }
       break;
       
@@ -180,13 +190,14 @@ function startGameSession() {
   menu.style.display = 'none';
   canvas.style.display = 'block';
   gameInfo.style.display = 'block';
-  
-  // Afficher le bouton d'arrêt pour les joueurs actifs
+    // Afficher le bouton d'arrêt pour les joueurs actifs
   if (role === 'player1' || role === 'player2') {
     stopGameButton.style.display = 'block';
+    newGameButton.style.display = 'block';
     nextLevelButton.style.display = 'block';
   } else {
     // Spectateur : ne pas afficher les boutons de contrôle
+    newGameButton.style.display = 'none';
     nextLevelButton.style.display = 'none';
   }
   
@@ -196,10 +207,14 @@ function startGameSession() {
 
 function returnToMenu() {
   gameStarted = false;
-  menu.style.display = 'block';
-  canvas.style.display = 'none';
+  
+  // Arrêter la boucle de jeu si elle tourne encore
+  stopGameLoop();
+  
+  menu.style.display = 'block';  canvas.style.display = 'none';
   gameInfo.style.display = 'none';
   stopGameButton.style.display = 'none';
+  newGameButton.style.display = 'none';
   nextLevelButton.style.display = 'none';
 }
 
@@ -215,6 +230,9 @@ function requestRole(requestedRole: Role) {
 }
 
 function stopGame() {
+  // Arrêter la boucle de jeu d'abord
+  stopGameLoop();
+  
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'stopGame',
@@ -247,11 +265,33 @@ function goToNextLevel() {
   }
 }
 
+function newGame() {
+  // Vérifier si le joueur peut démarrer une nouvelle partie
+  if (role === 'player1' || role === 'player2') {
+    console.log('Démarrage d\'une nouvelle partie');
+    
+    // Notifier le serveur qu'on démarre une nouvelle partie
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'newGame',
+        initiator: role
+      }));
+    }
+    
+    // Redémarrer le jeu directement
+    startGame(canvas, role, ws);
+  } else {
+    alert('Seuls les joueurs actifs peuvent démarrer une nouvelle partie');
+  }
+}
+
 // Event listeners
 joinP1Button.onclick = () => requestRole('player1');
 joinP2Button.onclick = () => requestRole('player2');
 stopGameButton.onclick = () => stopGame();
+newGameButton.onclick = () => newGame();
 nextLevelButton.onclick = () => goToNextLevel();
+newGameButton.onclick = () => newGame();
 
 // Démarrer la connexion WebSocket au chargement
 connectWebSocket();

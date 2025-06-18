@@ -234,13 +234,13 @@ let currentLevel: Level = levels[currentLevelIndex];
 // Murs de bordure permanents (toujours présents)
 const BORDER_WALLS: Wall[] = [
   // Mur du haut
-  { x: 0, y: 0, w: 800, h: 20 },
+  { x: 0, y: 0, w: 736, h: 20 },
   // Mur du bas
-  { x: 0, y: 580, w: 800, h: 20 },
+  { x: 0, y: 580, w: 736, h: 20 },
   // Mur de gauche
   { x: 0, y: 0, w: 20, h: 600 },
   // Mur de droite
-  { x: 780, y: 0, w: 20, h: 600 }
+  { x: 716, y: 0, w: 20, h: 600 }
 ];
 
 // Export des murs (bordures + murs du niveau actuel)
@@ -249,7 +249,7 @@ export const walls: Wall[] = [...BORDER_WALLS, ...currentLevel.walls];
 // Positions de spawn fixes pour les joueurs (à l'intérieur des murs)
 const PLAYER_SPAWNS = {
   player1: [50, 550] as [number, number], // Bas gauche (à l'intérieur des murs)
-  player2: [750, 550] as [number, number]  // Bas droite (à l'intérieur des murs)
+  player2: [500, 550] as [number, number]  // Bas droite (à l'intérieur des murs)
 };
 
 // Fonctions pour gérer les niveaux
@@ -317,6 +317,13 @@ export function goToLevel(levelNumber: number): boolean {
     return true;
   }
   return false;
+}
+
+// Fonction pour remettre le jeu au niveau 1 (nouvelle partie)
+export function resetToFirstLevel() {
+  currentLevelIndex = 0;
+  currentLevel = levels[currentLevelIndex];
+  console.log(`Jeu réinitialisé au niveau 1`);
 }
 
 // Fonction de dessin du niveau (simplifiée car pas de murs pour l'instant)

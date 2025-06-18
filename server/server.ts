@@ -1,6 +1,6 @@
 // server/server.ts
 import WebSocket, { WebSocketServer } from 'ws';
-import { Role, RequestRoleMessage, GameStateMessage, PlayerDisconnectedMessage } from '../src/types';
+import { Role, RequestRoleMessage, GameStateMessage, PlayerDisconnectedMessage, EnemyMoveMessage, EnemyShootMessage, EnemyDeathMessage } from '../src/types';
 
 const wss = new WebSocketServer({ port: 8080 });
 const clients = new Map<WebSocket, Role>();
@@ -107,15 +107,25 @@ wss.on('connection', (ws) => {
           
           // Diffuser le nouvel état
           broadcastGameState();
-          break;
-            case 'move':
+          break;        case 'move':
         case 'shoot':
           // Relayer les messages de jeu seulement des joueurs actifs
           const senderRole = clients.get(ws);
           if (senderRole === 'player1' || senderRole === 'player2') {
             broadcastToPlayers(message.toString(), ws);
           }
-          break;        case 'stopGame':
+          break;
+
+        case 'enemyMove':
+        case 'enemyShoot':
+        case 'enemyDeath':
+          // Relayer les messages des ennemis seulement des joueurs actifs
+          const enemySenderRole = clients.get(ws);
+          if (enemySenderRole === 'player1' || enemySenderRole === 'player2') {
+            console.log(`Message ennemi ${data.type} reçu de ${enemySenderRole}`);
+            broadcastToPlayers(message.toString(), ws);
+          }
+          break;case 'stopGame':
           // Seuls les joueurs actifs peuvent arrêter la partie
           const stopperRole = clients.get(ws);
           if (stopperRole === 'player1' || stopperRole === 'player2') {

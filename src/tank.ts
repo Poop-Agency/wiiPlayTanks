@@ -1,6 +1,7 @@
 // src/tank.ts
 import { Bullet } from "./bullet.js";
 import { walls } from "./level.js";
+import { FRAME_SPEEDS } from "./constants.js";
 
 export class Tank {
   x: number;
@@ -8,7 +9,7 @@ export class Tank {
   color: string;
   direction: number = 0; // Direction du tank (pour le mouvement et le corps)
   cannonDirection: number = 0; // Direction du canon (pour la visée)
-  speed: number = 0.8;
+  speed: number = FRAME_SPEEDS.tank.player; // Vitesse du joueur en pixels/frame
   id: string;
   width: number = 32; // Largeur officielle
   height: number = 24; // Hauteur officielle
@@ -153,7 +154,7 @@ export class Tank {
     const halfWidth = this.width / 2;
     const halfHeight = this.height / 2;
     
-    if (x - halfWidth < 20 || x + halfWidth > 800 - 20 || 
+    if (x - halfWidth < 20 || x + halfWidth > 736 - 20 || 
         y - halfHeight < 20 || y + halfHeight > 600 - 20) {
       return false;
     }

@@ -1,11 +1,13 @@
 // src/bullet.ts
+import { FRAME_SPEEDS } from "./constants.js";
+
 export class Bullet {
   x: number;
   y: number;
   dx: number;
   dy: number;
   color: string;
-  speed: number = 0.8;
+  speed: number = FRAME_SPEEDS.bullet.normal; // Vitesse normale par défaut
   radius: number = 3; // 6px de diamètre = 3px de rayon
   direction: number;
   trail: { x: number; y: number }[] = [];
@@ -104,30 +106,24 @@ export class Bullet {
     
     return color;
   }  checkCollisionAndRebound(walls: { x: number; y: number; w: number; h: number }[]): boolean {
-    // Vérifier si on a dépassé le nombre de ricochets autorisés
-    if (this.ricochetsUsed >= this.maxRicochets) {
-      // Détruire la balle à la prochaine collision
-      for (const wall of walls) {
-        if (
-          this.x + this.radius > wall.x &&
-          this.x - this.radius < wall.x + wall.w &&
-          this.y + this.radius > wall.y &&
-          this.y - this.radius < wall.y + wall.h
-        ) {
-          return true; // Détruire la balle
-        }
-      }
-      return false;
-    }
-
-    // Ricochet possible
+    // Vérifier collision avec les murs
     for (const wall of walls) {
       if (
         this.x + this.radius > wall.x &&
         this.x - this.radius < wall.x + wall.w &&
         this.y + this.radius > wall.y &&
         this.y - this.radius < wall.y + wall.h
-      ) {        // Calculer de quel côté du mur la balle frappe
+      ) {
+        console.log(`Balle collision: ricochetsUsed=${this.ricochetsUsed}, maxRicochets=${this.maxRicochets}`);
+        
+        // Si on a déjà utilisé tous les ricochets autorisés, détruire la balle
+        if (this.ricochetsUsed >= this.maxRicochets) {
+          console.log(`Balle détruite après ${this.ricochetsUsed} ricochets`);
+          return true; // Détruire la balle
+        }
+
+        // Sinon, effectuer le rebond
+        // Calculer de quel côté du mur la balle frappe
         const overlapLeft = (this.x + this.radius) - wall.x;
         const overlapRight = (wall.x + wall.w) - (this.x - this.radius);
         const overlapTop = (this.y + this.radius) - wall.y;
@@ -146,17 +142,18 @@ export class Bullet {
 
         // Ajuster la position pour éviter de rester dans le mur
         if (minOverlap === overlapLeft) {
-          this.x = wall.x - this.radius;
+          this.x = wall.x - this.radius - 1; // -1 pour éviter le collage
         } else if (minOverlap === overlapRight) {
-          this.x = wall.x + wall.w + this.radius;
+          this.x = wall.x + wall.w + this.radius + 1; // +1 pour éviter le collage
         } else if (minOverlap === overlapTop) {
-          this.y = wall.y - this.radius;
+          this.y = wall.y - this.radius - 1;
         } else if (minOverlap === overlapBottom) {
-          this.y = wall.y + wall.h + this.radius;
+          this.y = wall.y + wall.h + this.radius + 1;
         }
 
         this.ricochetsUsed++;
         this.hasRebounded = true; // Garder pour compatibilité
+        console.log(`Balle rebondit (${this.ricochetsUsed}/${this.maxRicochets})`);
         return false; // Ne pas détruire, juste rebondir
       }
     }
