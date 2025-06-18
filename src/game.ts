@@ -2,7 +2,7 @@
 import { Tank } from "./tank.js";
 import { Bullet } from "./bullet.js";
 import { setupControls, updateControls } from "./controls.js";
-import { drawLevel, walls, getPlayerSpawns, nextLevel, getCurrentLevelNumber, getTotalLevels, getEnemies, resetToFirstLevel } from "./level.js";
+import { drawLevel, walls, getPlayerSpawns, nextLevel, getCurrentLevelNumber, getTotalLevels, getEnemies, getCurrentLevel,resetToFirstLevel } from "./level.js";
 import { Enemy } from "./enemy.js";
 import { Role, MoveMessage, ShootMessage, EnemyMoveMessage, EnemyShootMessage, EnemyDeathMessage } from "./types.js";
 
@@ -38,8 +38,7 @@ export function startGame(canvas: HTMLCanvasElement, role: Role, ws: WebSocket) 
   gameStartTime = Date.now(); // Enregistrer le début de partie
   gameRunning = true; // Marquer le jeu comme actif
   // Configuration du canvas
-  canvas.width = 736;
-  canvas.height = 600;
+  resizeCanvas();
   
   // IMPORTANT: Remettre le jeu au niveau 1 (nouvelle partie)
   resetToFirstLevel();
@@ -83,16 +82,16 @@ function handleNetworkMessage(data: any) {
         player2.cannonDirection = moveMsg.cannonDirection;
       }
       break;
-      
+
     case 'shoot':
       const shootMsg = data as ShootMessage;
-      
+
       // Vérifier la limite de balles pour le joueur qui tire
       const shooterBullets = shootMsg.id === 'player1' ? player1Bullets : player2Bullets;
       if (shooterBullets.length >= MAX_BULLETS_PER_PLAYER) {
         break; // Ne pas créer la balle si la limite est atteinte
       }
-      
+
       const bullet = new Bullet(
         shootMsg.x,
         shootMsg.y,
@@ -102,7 +101,8 @@ function handleNetworkMessage(data: any) {
       bullets.push(bullet);
       shooterBullets.push(bullet);
       break;
-        case 'enemyMove':
+
+    case 'enemyMove':
       const enemyMoveMsg = data as EnemyMoveMessage;
       console.log(`[${gameRole}] Reçu enemyMove pour ennemi ${enemyMoveMsg.enemyId}:`, enemyMoveMsg);
       const enemyToMove = enemies.find(e => e.id === enemyMoveMsg.enemyId);
@@ -140,13 +140,14 @@ function handleNetworkMessage(data: any) {
         console.log(`[${gameRole}] Ennemi ${enemyShootMsg.enemyId} non trouvé pour tir`);
       }
       break;
-      
+
     case 'enemyDeath':
       const enemyDeathMsg = data as EnemyDeathMessage;
       const enemyIndex = enemies.findIndex(e => e.id === enemyDeathMsg.enemyId);
       if (enemyIndex !== -1) {
         enemies.splice(enemyIndex, 1);
-          // Vérifier si tous les ennemis sont éliminés
+
+        // Vérifier si tous les ennemis sont éliminés
         if (enemies.length === 0) {
           setTimeout(() => {
             goToNextLevel();
@@ -170,7 +171,7 @@ function handleNetworkMessage(data: any) {
 
 function sendNetworkUpdate(tank: Tank, type: 'move' | 'shoot', isCannonOnly: boolean = false) {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
-  
+
   if (type === 'move') {
     const moveMsg: MoveMessage = {
       type: 'move',
@@ -186,8 +187,8 @@ function sendNetworkUpdate(tank: Tank, type: 'move' | 'shoot', isCannonOnly: boo
     const shootMsg: ShootMessage = {
       type: 'shoot',
       id: gameRole,
-      x: tank.x + Math.cos(tank.cannonDirection) * (tank.width/2 + 5), // Ajusté aux nouvelles dimensions
-      y: tank.y + Math.sin(tank.cannonDirection) * (tank.width/2 + 5),
+      x: tank.x + Math.cos(tank.cannonDirection) * (tank.width / 2 + 5), // Ajusté aux nouvelles dimensions
+      y: tank.y + Math.sin(tank.cannonDirection) * (tank.width / 2 + 5),
       direction: tank.direction,
       cannonDirection: tank.cannonDirection
     };
@@ -197,7 +198,7 @@ function sendNetworkUpdate(tank: Tank, type: 'move' | 'shoot', isCannonOnly: boo
 
 function sendEnemyNetworkUpdate(type: string, data: any) {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
-  
+
   console.log(`Envoi message ennemi ${type}:`, data); // Debug
   websocket.send(JSON.stringify(data));
 }
@@ -208,8 +209,8 @@ function gameLoop() {
     const playerTank = gameRole === 'player1' ? player1 : player2;
     const otherTank = gameRole === 'player1' ? player2 : player1;
     const playerBullets = gameRole === 'player1' ? player1Bullets : player2Bullets;
-      const previousPos = { x: playerTank.x, y: playerTank.y, direction: playerTank.direction, cannonDirection: playerTank.cannonDirection };
-    
+    const previousPos = { x: playerTank.x, y: playerTank.y, direction: playerTank.direction, cannonDirection: playerTank.cannonDirection };
+
     updateControls(playerTank, otherTank, bullets, (bullet) => {
       // Vérifier si le joueur peut tirer (limite de 4 balles)
       if (playerBullets.length < MAX_BULLETS_PER_PLAYER) {
@@ -218,25 +219,25 @@ function gameLoop() {
         sendNetworkUpdate(playerTank, 'shoot');
       }
     });
-      // Envoyer les mises à jour de position si le tank a bougé OU si le canon a tourné
-    const positionChanged = previousPos.x !== playerTank.x || 
-                           previousPos.y !== playerTank.y || 
-                           previousPos.direction !== playerTank.direction;
+    // Envoyer les mises à jour de position si le tank a bougé OU si le canon a tourné
+    const positionChanged = previousPos.x !== playerTank.x ||
+      previousPos.y !== playerTank.y ||
+      previousPos.direction !== playerTank.direction;
     const cannonChanged = previousPos.cannonDirection !== playerTank.cannonDirection;
-      if (positionChanged || cannonChanged) {
+    if (positionChanged || cannonChanged) {
       // Si seule la visée a changé, utiliser un intervalle plus court
       const onlyCannonChanged = !positionChanged && cannonChanged;
       sendNetworkUpdate(playerTank, 'move', onlyCannonChanged);
     }
   }
-    // Mettre à jour les bullets
+  // Mettre à jour les bullets
   bullets.forEach((bullet, index) => {
     bullet.update();
   });
-  
+
   // Vérifier les collisions entre balles (avant les autres vérifications)
   checkBulletBulletCollisions();
-  
+
   // Vérifier les autres collisions pour chaque balle restante
   bullets.forEach((bullet, index) => {
     // Vérifier collision avec les murs (avec rebond)
@@ -245,19 +246,22 @@ function gameLoop() {
       // Retirer aussi de la liste du joueur correspondant
       removeBulletFromPlayer(bullet);
       return;
-    }
-    
-    // Supprimer les bullets hors écran
-    if (bullet.x < 0 || bullet.x > 736 || bullet.y < 0 || bullet.y > 600) {
+    }    // Supprimer les bullets hors écran
+    const currentLevel = getCurrentLevel();
+    const arenaWidth = currentLevel.dimensions?.width || 800;
+    const arenaHeight = currentLevel.dimensions?.height || 600;
+    if (bullet.x < 0 || bullet.x > arenaWidth || bullet.y < 0 || bullet.y > arenaHeight) {
       bullets.splice(index, 1);
       removeBulletFromPlayer(bullet);
       return;
     }
-    
+
     // Vérifier collision avec les tanks
     if (checkBulletTankCollision(bullet, index)) {
       removeBulletFromPlayer(bullet);
-    }  });  // Mettre à jour les ennemis
+    }
+  });
+  // Mettre à jour les ennemis
   const playerTanks = [player1, player2];
   enemies.forEach((enemy, enemyIndex) => {
     // Seul le player1 contrôle l'IA et envoie les updates réseau
@@ -267,15 +271,15 @@ function gameLoop() {
       // Les autres joueurs mettent à jour sans IA
       enemy.update(playerTanks, 16); // 16ms = ~60fps
     }
-    
-    // Ajouter les nouvelles balles des ennemis à la liste principale
+
+    // Ajouter les balles des ennemis à la liste principale
     enemy.getBullets().forEach(enemyBullet => {
       if (!bullets.includes(enemyBullet)) {
         bullets.push(enemyBullet);
       }
     });
   });
-    // Vérifier les collisions entre balles des joueurs et ennemis
+  // Vérifier les collisions entre balles des joueurs et ennemis
   bullets.forEach((bullet, bulletIndex) => {
     // Collision balle joueur -> ennemi
     if (bullet.color === "#4CAF50" || bullet.color === "#F44336") { // Balles des joueurs
@@ -288,12 +292,12 @@ function gameLoop() {
               enemyId: enemy.id
             });
           }
-          
+
           // Ennemi touché, le supprimer
           enemies.splice(enemyIndex, 1);
           bullets.splice(bulletIndex, 1);
           removeBulletFromPlayer(bullet);
-          
+
           // Vérifier si tous les ennemis sont éliminés
           if (enemies.length === 0) {
             setTimeout(() => {
@@ -303,7 +307,7 @@ function gameLoop() {
         }
       });
     }
-    
+
     // Collision balle ennemi -> joueur
     enemies.forEach(enemy => {
       if (enemy.getBullets().includes(bullet)) {
@@ -315,7 +319,7 @@ function gameLoop() {
       }
     });
   });
-  
+
   // Vérifier les collisions entre balles
   checkBulletBulletCollisions();
 
@@ -332,19 +336,19 @@ function gameLoop() {
 
 function checkBulletTankCollision(bullet: Bullet, bulletIndex: number): boolean {
   const tanks = [player1, player2];
-  
+
   for (const tank of tanks) {
     const distance = Math.sqrt(
       Math.pow(bullet.x - tank.x, 2) + Math.pow(bullet.y - tank.y, 2)
     );
-    
+
     // Collision plus précise basée sur les vraies dimensions
     const collisionRadius = Math.max(tank.width, tank.height) / 2 + bullet.radius;
-    
+
     if (distance < collisionRadius) { // Utiliser les vraies dimensions
       // Collision détectée
       bullets.splice(bulletIndex, 1);
-      
+
       // Effet de respawn style Wii Play
       respawnTank(tank);
       return true; // Collision détectée
@@ -358,9 +362,9 @@ function respawnTank(tank: Tank) {
   ctx.save();
   ctx.fillStyle = 'rgba(255, 255, 0, 0.7)';
   const flashSize = Math.max(tank.width, tank.height) + 10;
-  ctx.fillRect(tank.x - flashSize/2, tank.y - flashSize/2, flashSize, flashSize);
+  ctx.fillRect(tank.x - flashSize / 2, tank.y - flashSize / 2, flashSize, flashSize);
   ctx.restore();
-  
+
   // Repositionner le tank à sa position de départ (utiliser les spawns du niveau)
   const spawns = getPlayerSpawns();
   if (tank.id === 'player1') {
@@ -383,7 +387,7 @@ function removeBulletFromPlayer(bullet: Bullet) {
     player1Bullets.splice(p1Index, 1);
     return;
   }
-  
+
   const p2Index = player2Bullets.indexOf(bullet);
   if (p2Index !== -1) {
     player2Bullets.splice(p2Index, 1);
@@ -392,22 +396,26 @@ function removeBulletFromPlayer(bullet: Bullet) {
 
 function drawGame() {
   // Fond avec style Wii Play (dégradé vert)
-  const gradient = ctx.createLinearGradient(0, 0, 0, 600);
+  const currentLevel = getCurrentLevel();
+  const arenaWidth = currentLevel.dimensions?.width || 800;
+  const arenaHeight = currentLevel.dimensions?.height || 600;
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, arenaHeight);
   gradient.addColorStop(0, '#8FBC8F');
   gradient.addColorStop(1, '#90EE90');
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 736, 600);
-  
+  ctx.fillRect(0, 0, arenaWidth, arenaHeight);
+
   // Dessiner le niveau
   drawLevel(ctx);
-  
+
   // Dessiner les ennemis
   enemies.forEach(enemy => enemy.draw(ctx));
-  
+
   // Dessiner les tanks des joueurs
   player1.draw(ctx);
   player2.draw(ctx);
-  
+
   // Dessiner les bullets
   bullets.forEach((bullet) => bullet.draw(ctx));
 }
@@ -415,16 +423,16 @@ function drawGame() {
 function drawUI() {
   // Mettre à jour les informations dans l'interface HTML
   updateGameInfo();
-  
+
   // Afficher le rôle du joueur sur le canvas
   ctx.save();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   ctx.fillRect(10, 10, 250, 120);
-  
+
   ctx.fillStyle = 'white';
   ctx.font = '16px Arial';
   ctx.fillText(`Rôle: ${gameRole}`, 20, 30);
-  
+
   if (gameRole === 'spectator') {
     ctx.fillStyle = '#9c27b0';
     ctx.fillText('Mode Spectateur', 20, 50);
@@ -432,25 +440,25 @@ function drawUI() {
   } else {
     ctx.fillStyle = gameRole === 'player1' ? '#4CAF50' : '#F44336';
     ctx.fillText(`Vous êtes le ${gameRole}`, 20, 50);
-    
+
     // Afficher le nombre de balles restantes
     const playerBullets = gameRole === 'player1' ? player1Bullets : player2Bullets;
     const remaining = MAX_BULLETS_PER_PLAYER - playerBullets.length;
     ctx.fillText(`Balles: ${remaining}/${MAX_BULLETS_PER_PLAYER}`, 20, 70);
-    
+
     // Afficher le temps de jeu
     const gameTimeMs = Date.now() - gameStartTime;
     const minutes = Math.floor(gameTimeMs / 60000);
     const seconds = Math.floor((gameTimeMs % 60000) / 1000);
     ctx.fillText(`Temps: ${minutes}:${seconds.toString().padStart(2, '0')}`, 20, 90);
-    
+
     // Vérifier le timeout
     if (minutes >= GAME_TIMEOUT_MINUTES) {
       ctx.fillStyle = '#ff4444';
       ctx.fillText('TEMPS ÉCOULÉ !', 20, 110);
     }
   }
-  
+
   ctx.restore();
 }
 
@@ -458,7 +466,7 @@ function updateGameInfo() {
   // Mettre à jour les informations dans l'interface HTML
   // Mettre à jour les informations de niveau
   updateLevelInfo();
-  
+
   // Pour les balles restantes, afficher selon le rôle
   let remaining = 0;
   if (gameRole === 'player1') {
@@ -469,7 +477,7 @@ function updateGameInfo() {
     // Spectateur : afficher P1/P2 ou juste les balles totales
     remaining = MAX_BULLETS_PER_PLAYER; // Valeur par défaut pour spectateur
   }
-  
+
   const remainingBulletsSpan = document.getElementById('remainingBullets');
   if (remainingBulletsSpan) {
     if (gameRole === 'spectator') {
@@ -478,25 +486,25 @@ function updateGameInfo() {
       remainingBulletsSpan.textContent = remaining.toString();
     }
   }
-    // Temps de jeu dégressif (5:00 -> 0:00)
+  // Temps de jeu dégressif (5:00 -> 0:00)
   const gameTimeMs = Date.now() - gameStartTime;
   const totalTimeMs = GAME_TIMEOUT_MINUTES * 60 * 1000; // 5 minutes en ms
   const remainingTimeMs = Math.max(0, totalTimeMs - gameTimeMs);
-  
+
   const minutes = Math.floor(remainingTimeMs / 60000);
   const seconds = Math.floor((remainingTimeMs % 60000) / 1000);
-  
+
   const gameTimeSpan = document.getElementById('gameTime');
   if (gameTimeSpan) {
     gameTimeSpan.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
-  
+
   // Si le temps est écoulé, déclencher la fin de partie
   if (remainingTimeMs <= 0) {
     handleTimeExpired();
     return; // Arrêter les mises à jour
   }
-    // Afficher le bouton d'arrêt seulement si on est proche de l'expiration (dernière minute)
+  // Afficher le bouton d'arrêt seulement si on est proche de l'expiration (dernière minute)
   const stopGameButton = document.getElementById('stopGameBtn') as HTMLButtonElement;
   if (stopGameButton) {
     if (minutes <= 1) { // Dernière minute
@@ -515,18 +523,21 @@ function updateGameInfo() {
 // Fonction pour changer de niveau (passer au niveau suivant)
 export function goToNextLevel(): boolean {
   if (nextLevel()) {
+    // Redimensionner le canvas pour le nouveau niveau
+    resizeCanvas();
+
     // Repositionner les tanks aux nouvelles positions de spawn
     const spawns = getPlayerSpawns();
     player1.x = spawns.player1[0];
     player1.y = spawns.player1[1];
     player1.direction = 0;
     player1.cannonDirection = 0;
-    
+
     player2.x = spawns.player2[0];
     player2.y = spawns.player2[1];
     player2.direction = 0;
     player2.cannonDirection = 0;
-    
+
     // Vider les balles
     bullets.length = 0;
     player1Bullets.length = 0;
@@ -544,10 +555,10 @@ export function goToNextLevel(): boolean {
     
     // Mettre à jour l'UI avec le nouveau niveau
     updateLevelInfo();
-    
+
     return true;
   }
-  
+
   return false; // Pas de niveau suivant (fin du jeu)
 }
 
@@ -565,17 +576,17 @@ function updateLevelInfo() {
 // Fonction pour vérifier les collisions entre balles
 function checkBulletBulletCollisions() {
   const bulletsToRemove: number[] = [];
-  
+
   for (let i = 0; i < bullets.length; i++) {
     for (let j = i + 1; j < bullets.length; j++) {
       const bullet1 = bullets[i];
       const bullet2 = bullets[j];
-      
+
       // Calculer la distance entre les deux balles
       const dx = bullet1.x - bullet2.x;
       const dy = bullet1.y - bullet2.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      
+
       // Si les balles se touchent (somme de leurs rayons)
       if (distance < bullet1.radius + bullet2.radius) {
         // Marquer les deux balles pour suppression
@@ -584,7 +595,7 @@ function checkBulletBulletCollisions() {
       }
     }
   }
-  
+
   // Supprimer les balles en collision (en commençant par les indices les plus élevés)
   bulletsToRemove.sort((a, b) => b - a);
   bulletsToRemove.forEach(index => {
@@ -592,7 +603,7 @@ function checkBulletBulletCollisions() {
     bullets.splice(index, 1);
     removeBulletFromPlayer(bullet);
   });
-  
+
   return bulletsToRemove.length > 0;
 }
 
@@ -603,10 +614,10 @@ function handleTimeExpired() {
   // Éviter les appels multiples
   if (timeExpiredHandled) return;
   timeExpiredHandled = true;
-  
+
   // Afficher une popup
   alert('⏰ Temps écoulé ! La partie est terminée.\n\nRetour au menu principal...');
-    // Envoyer un message d'arrêt de partie si on est un joueur actif
+  // Envoyer un message d'arrêt de partie si on est un joueur actif
   if ((gameRole === 'player1' || gameRole === 'player2') && websocket && websocket.readyState === WebSocket.OPEN) {
     const stopMsg = {
       type: 'stopGame',
@@ -615,7 +626,7 @@ function handleTimeExpired() {
     };
     websocket.send(JSON.stringify(stopMsg));
   }
-  
+
   // Rediriger vers la page principale après un court délai
   setTimeout(() => {
     window.location.reload();
@@ -635,9 +646,9 @@ function initializeEnemies() {
     });
   });
   enemies.length = 0; // Vider la liste des ennemis
-  
+
   const levelEnemies = getEnemies();
-  
+
   // Créer les ennemis seulement s'ils ont des positions valides
   for (let i = 0; i < levelEnemies.length; i++) {
     const enemyData = levelEnemies[i];
@@ -659,7 +670,7 @@ function initializeEnemies() {
     } else {
       enemy.setNetworkControlled(false);
     }
-    
+
     enemies.push(enemy);
     console.log(`[${gameRole}] Ennemi ${enemyData.type} créé avec ID: ${enemy.id} à (${enemyData.x}, ${enemyData.y}) - NetworkControlled: ${enemy.isNetworkControlled}`);
   }
@@ -675,4 +686,12 @@ export function stopGame() {
     cancelAnimationFrame(gameLoopId);
     console.log('Boucle de jeu arrêtée, ID:', gameLoopId);
   }
+}
+
+// Fonction pour redimensionner le canvas selon le niveau actuel
+function resizeCanvas() {
+  const currentLevel = getCurrentLevel();
+  const canvas = ctx.canvas;
+  canvas.width = currentLevel.dimensions?.width || 800;
+  canvas.height = currentLevel.dimensions?.height || 600;
 }

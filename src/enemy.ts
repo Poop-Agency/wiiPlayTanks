@@ -1,7 +1,7 @@
 // src/enemy.ts
 import { Bullet } from "./bullet.js";
-import { walls } from "./level.js";
 import { FRAME_SPEEDS, SPEEDS } from "./constants.js";
+import { walls, BLOCK_SIZE, getCurrentLevel } from "./level.js";
 
 export type EnemyType = 'brown' | 'grey' | 'teal' | 'yellow' | 'pink' | 'green' | 'purple' | 'white' | 'black';
 
@@ -112,7 +112,7 @@ export class Enemy {
   height: number = 24;
   bullets: Bullet[] = [];
   id: string; // Identifiant unique pour la synchronisation
-  
+
   // IA properties
   lastShot: number = 0;
   shootInterval: number = 2000; // 2 secondes par défaut
@@ -123,7 +123,7 @@ export class Enemy {
     // Effets visuels
   alpha: number = 1; // Pour l'invisibilité
   glowEffect: number = 0; // Pour les effets de glow
-  
+
   // Synchronisation
   isNetworkControlled: boolean = false; // Si cet ennemi est contrôlé par le réseau
   lastNetworkUpdate: number = 0; // Timestamp de la dernière mise à jour réseau envoyée
@@ -154,7 +154,7 @@ export class Enemy {
     
     // Ajuster les intervals selon l'IA
     this.adjustAITimings();
-    
+
     // Effet spécial pour les tanks invisibles
     if (this.config.special === 'invisible') {
       this.alpha = 0.3; // Semi-transparent
@@ -193,7 +193,7 @@ export class Enemy {
   }
   update(playerTanks: any[], deltaTime: number, sendNetworkUpdate?: (type: string, data: any) => void) {
     const now = Date.now();
-    
+
     // Mettre à jour l'effet de glow
     this.glowEffect = Math.sin(now * 0.005) * 0.5 + 0.5;
       // Ne calculer l'IA que si ce n'est pas contrôlé par le réseau
@@ -252,12 +252,13 @@ export class Enemy {
         }
         this.lastShot = now; // Toujours mettre à jour le timer même si on n'a pas tiré
       }
-    }
-    
-    // Nettoyer les balles expirées
+    }    // Nettoyer les balles expirées
     this.bullets = this.bullets.filter(bullet => {
       bullet.update();
-      return bullet.x >= 0 && bullet.x <= 736 && bullet.y >= 0 && bullet.y <= 600;
+      const currentLevel = getCurrentLevel();
+      const arenaWidth = currentLevel.dimensions?.width || 800;
+      const arenaHeight = currentLevel.dimensions?.height || 600;
+      return bullet.x >= 0 && bullet.x <= arenaWidth && bullet.y >= 0 && bullet.y <= arenaHeight;
     });
   }
     private updateMovement(playerTanks: any[]) {
@@ -272,11 +273,11 @@ export class Enemy {
     // Comportement normal pour les autres ennemis
     const player = this.findNearestPlayer(playerTanks);
     if (!player) return;
-    
+
     const dx = player.x - this.x;
     const dy = player.y - this.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
+
     switch (this.config.aiType) {
       case 'offensive':
       case 'aggressive':
@@ -368,7 +369,7 @@ export class Enemy {
     this.bullets.push(bullet);
     return shootDirection; // Retourner la direction utilisée pour le tir
   }
-  
+
   private getAccuracy(): number {
     switch (this.config.aiType) {
       case 'weak': return 0.8; // Très imprécis
@@ -381,29 +382,30 @@ export class Enemy {
       default: return 0.4;
     }
   }
-  
+
   private findNearestPlayer(playerTanks: any[]): any {
     let nearest = null;
     let minDistance = Infinity;
-    
+
     for (const tank of playerTanks) {
       const dx = tank.x - this.x;
       const dy = tank.y - this.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      
+
       if (distance < minDistance) {
         minDistance = distance;
         nearest = tank;
       }
     }
-    
+
     return nearest;
   }
-    private moveTowards(target: any) {
+
+  private moveTowards(target: any) {
     const dx = target.x - this.x;
     const dy = target.y - this.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
+
     if (distance > 0) {
       // Se rapprocher directement avec la vitesse configurée
       const moveX = (dx / distance) * this.config.speed;
@@ -416,11 +418,12 @@ export class Enemy {
       }
     }
   }
-    private moveAwayFrom(target: any) {
+
+  private moveAwayFrom(target: any) {
     const dx = this.x - target.x;
     const dy = this.y - target.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    
+
     if (distance > 0) {
       // S'éloigner directement avec la vitesse configurée
       const moveX = (dx / distance) * this.config.speed;
@@ -445,140 +448,142 @@ export class Enemy {
       this.direction = angle;
     }
   }
-  
   private canMoveTo(x: number, y: number): boolean {
     const halfWidth = this.width / 2;
-    const halfHeight = this.height / 2;
-    
-    // Vérifier les limites de l'écran
-    if (x - halfWidth < 20 || x + halfWidth > 736 - 20 || 
-        y - halfHeight < 20 || y + halfHeight > 600 - 20) {
+    const halfHeight = this.height / 2;    // Vérifier les limites de l'écran avec les nouvelles dimensions
+    const currentLevel = getCurrentLevel();
+    const arenaWidth = currentLevel.dimensions?.width || 800;
+    const arenaHeight = currentLevel.dimensions?.height || 600;
+    if (x - halfWidth < BLOCK_SIZE || x + halfWidth > arenaWidth - BLOCK_SIZE ||
+      y - halfHeight < BLOCK_SIZE || y + halfHeight > arenaHeight - BLOCK_SIZE) {
       return false;
     }
-    
+
     // Vérifier collision avec les murs
     for (const wall of walls) {
-      if (x + halfWidth > wall.x && 
-          x - halfWidth < wall.x + wall.w && 
-          y + halfHeight > wall.y && 
-          y - halfHeight < wall.y + wall.h) {
+      if (x + halfWidth > wall.x &&
+        x - halfWidth < wall.x + wall.w &&
+        y + halfHeight > wall.y &&
+        y - halfHeight < wall.y + wall.h) {
         return false;
       }
     }
-    
+
     return true;
   }
-  
+
   private shoot() {
-    const bulletX = this.x + Math.cos(this.cannonDirection) * (this.width/2 + 5);
-    const bulletY = this.y + Math.sin(this.cannonDirection) * (this.width/2 + 5);
-      const bullet = new Bullet(
+    const bulletX = this.x + Math.cos(this.cannonDirection) * (this.width / 2 + 5);
+    const bulletY = this.y + Math.sin(this.cannonDirection) * (this.width / 2 + 5);
+
+    const bullet = new Bullet(
       bulletX,
       bulletY,
       this.cannonDirection,
       this.config.color
     );
-      // Utiliser la vitesse configurée directement
-    bullet.speed = this.config.bulletSpeed;
+
+    // Ajuster la vitesse de la balle
+    bullet.speed *= this.config.bulletSpeed;
     bullet.dx = Math.cos(this.cannonDirection) * bullet.speed;
     bullet.dy = Math.sin(this.cannonDirection) * bullet.speed;
-    
+
     // Configurer les ricochets
     bullet.maxRicochets = this.config.bulletRicochets;
     
     this.bullets.push(bullet);
   }
-  
+
   draw(ctx: CanvasRenderingContext2D) {
     ctx.save();
     ctx.globalAlpha = this.alpha;
-    
+
     // Effet de glow pour certains types
     if (this.config.aiType === 'aggressive' || this.config.aiType === 'precise') {
       ctx.shadowColor = this.config.color;
       ctx.shadowBlur = 10 + this.glowEffect * 5;
     }
-    
+
     // Dessiner le corps du tank
     ctx.translate(this.x, this.y);
     ctx.rotate(this.direction);
-    
+
     // Ombre
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(-this.width/2 + 1, -this.height/2 + 1, this.width, this.height);
-    
+    ctx.fillRect(-this.width / 2 + 1, -this.height / 2 + 1, this.width, this.height);
+
     // Corps principal
-    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(this.width, this.height)/2);
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(this.width, this.height) / 2);
     gradient.addColorStop(0, this.config.color);
     gradient.addColorStop(1, this.darkenColor(this.config.color, 0.3));
     ctx.fillStyle = gradient;
-    ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
-    
+    ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+
     // Bordure
     ctx.strokeStyle = this.darkenColor(this.config.color, 0.5);
     ctx.lineWidth = 2;
-    ctx.strokeRect(-this.width/2, -this.height/2, this.width, this.height);
-    
+    ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
+
     // Indicateur de type (petit carré coloré)
     ctx.fillStyle = this.config.color;
     ctx.fillRect(-4, -4, 8, 8);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1;
     ctx.strokeRect(-4, -4, 8, 8);
-    
+
     ctx.restore();
-    
+
     // Dessiner le canon
     ctx.save();
     ctx.globalAlpha = this.alpha;
     ctx.translate(this.x, this.y);
     ctx.rotate(this.cannonDirection);
-    
+
     const cannonLength = this.width * 0.8;
     const cannonWidth = 4;
     ctx.fillStyle = this.darkenColor(this.config.color, 0.4);
-    ctx.fillRect(-2, -cannonWidth/2, cannonLength, cannonWidth);
+    ctx.fillRect(-2, -cannonWidth / 2, cannonLength, cannonWidth);
     ctx.strokeStyle = this.darkenColor(this.config.color, 0.6);
     ctx.lineWidth = 1;
-    ctx.strokeRect(-2, -cannonWidth/2, cannonLength, cannonWidth);
-    
+    ctx.strokeRect(-2, -cannonWidth / 2, cannonLength, cannonWidth);
+
     ctx.restore();
-    
+
     // Dessiner les balles
     this.bullets.forEach(bullet => bullet.draw(ctx));
   }
-  
+
   private darkenColor(color: string, factor: number): string {
     if (color.startsWith('#')) {
       const r = parseInt(color.slice(1, 3), 16);
       const g = parseInt(color.slice(3, 5), 16);
       const b = parseInt(color.slice(5, 7), 16);
-      
+
       const newR = Math.floor(r * (1 - factor));
       const newG = Math.floor(g * (1 - factor));
       const newB = Math.floor(b * (1 - factor));
-      
+
       return `rgb(${newR}, ${newG}, ${newB})`;
     }
-    
+
     return color;
   }
-  
+
   // Vérifier si l'ennemi est touché par une balle
   isHitBy(bullet: Bullet): boolean {
     const distance = Math.sqrt(
       Math.pow(bullet.x - this.x, 2) + Math.pow(bullet.y - this.y, 2)
     );
-    
+
     const collisionRadius = Math.max(this.width, this.height) / 2 + bullet.radius;
     return distance < collisionRadius;
   }
-  
+
   // Obtenir toutes les balles de cet ennemi
   getBullets(): Bullet[] {
     return this.bullets;
   }
-  
+
   // Supprimer une balle spécifique
   removeBullet(bullet: Bullet) {
     const index = this.bullets.indexOf(bullet);
@@ -600,7 +605,7 @@ export class Enemy {
     bullet.dx = Math.cos(cannonDirection) * bullet.speed;
     bullet.dy = Math.sin(cannonDirection) * bullet.speed;
     bullet.maxRicochets = this.config.bulletRicochets;
-    
+
     this.bullets.push(bullet);
     return bullet; // Retourner la balle créée pour l'ajouter à la liste principale
   }  private updateCannonDirection(playerTanks: any[]) {

@@ -21,7 +21,6 @@ const playersCountSpan = document.getElementById('playersCount')!;
 const remainingBulletsSpan = document.getElementById('remainingBullets')!;
 const gameTimeSpan = document.getElementById('gameTime')!;
 const stopGameButton = document.getElementById('stopGameBtn')! as HTMLButtonElement;
-const newGameButton = document.getElementById('newGameBtn')! as HTMLButtonElement;
 const nextLevelButton = document.getElementById('nextLevelBtn')! as HTMLButtonElement;
 
 // Connexion WebSocket
@@ -193,11 +192,9 @@ function startGameSession() {
     // Afficher le bouton d'arrêt pour les joueurs actifs
   if (role === 'player1' || role === 'player2') {
     stopGameButton.style.display = 'block';
-    newGameButton.style.display = 'block';
     nextLevelButton.style.display = 'block';
   } else {
     // Spectateur : ne pas afficher les boutons de contrôle
-    newGameButton.style.display = 'none';
     nextLevelButton.style.display = 'none';
   }
   
@@ -214,7 +211,6 @@ function returnToMenu() {
   menu.style.display = 'block';  canvas.style.display = 'none';
   gameInfo.style.display = 'none';
   stopGameButton.style.display = 'none';
-  newGameButton.style.display = 'none';
   nextLevelButton.style.display = 'none';
 }
 
@@ -289,9 +285,7 @@ function newGame() {
 joinP1Button.onclick = () => requestRole('player1');
 joinP2Button.onclick = () => requestRole('player2');
 stopGameButton.onclick = () => stopGame();
-newGameButton.onclick = () => newGame();
 nextLevelButton.onclick = () => goToNextLevel();
-newGameButton.onclick = () => newGame();
 
 // Démarrer la connexion WebSocket au chargement
 connectWebSocket();
