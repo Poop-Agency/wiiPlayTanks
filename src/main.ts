@@ -1,6 +1,7 @@
 // src/main.ts
 import { startGame, stopGame as stopGameLoop } from "./game.js";
 import { Role, RoleMessage, GameStateMessage } from "./types.js";
+import { initializeSound } from "./sound.js";
 
 let ws: WebSocket;
 let role: Role = 'spectator';
@@ -282,8 +283,14 @@ function newGame() {
 }
 
 // Event listeners
-joinP1Button.onclick = () => requestRole('player1');
-joinP2Button.onclick = () => requestRole('player2');
+joinP1Button.onclick = () => {
+  initializeSound(); // Initialiser le son lors du premier clic
+  requestRole('player1');
+};
+joinP2Button.onclick = () => {
+  initializeSound(); // Initialiser le son lors du premier clic
+  requestRole('player2');
+};
 stopGameButton.onclick = () => stopGame();
 nextLevelButton.onclick = () => goToNextLevel();
 

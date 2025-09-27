@@ -125,7 +125,21 @@ const levels: Level[] = [{
     { type: "grey", x: 600, y: 100, direction: 0 },
     { type: "brown", x: 400, y: 200, direction: 0 }
   ],
-  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Murs en T et L-shapes pour protection et stratégie
+  indestructibleWalls: [
+    // Mur en T au centre-haut
+    { x: 11, y: 5 }, { x: 12, y: 5 }, { x: 13, y: 5 },
+    { x: 12, y: 6 }, { x: 12, y: 7 },
+    // Murs L dans les coins
+    { x: 6, y: 4 }, { x: 7, y: 4 }, { x: 6, y: 5 },
+    { x: 17, y: 4 }, { x: 18, y: 4 }, { x: 18, y: 5 },
+    // Obstacles bas
+    { x: 9, y: 12 }, { x: 10, y: 12 }, { x: 14, y: 12 }, { x: 15, y: 12 }
+  ],
+  destructibleWalls: [
+    { x: 8, y: 8 }, { x: 16, y: 8 }
+  ]
 },
 {
   id: 4,
@@ -135,7 +149,20 @@ const levels: Level[] = [{
     { type: "grey", x: 650, y: 120, direction: 0 },
     { type: "brown", x: 400, y: 300, direction: 0 }
   ],
-  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Murs en croix au centre plus des couloirs
+  indestructibleWalls: [
+    // Croix principale au centre
+    { x: 12, y: 7 }, { x: 12, y: 8 }, { x: 12, y: 9 }, { x: 12, y: 10 }, { x: 12, y: 11 },
+    { x: 10, y: 9 }, { x: 11, y: 9 }, { x: 13, y: 9 }, { x: 14, y: 9 },
+    // Couloirs horizontaux
+    { x: 5, y: 6 }, { x: 6, y: 6 }, { x: 18, y: 6 }, { x: 19, y: 6 },
+    { x: 5, y: 12 }, { x: 6, y: 12 }, { x: 18, y: 12 }, { x: 19, y: 12 }
+  ],
+  destructibleWalls: [
+    { x: 8, y: 4 }, { x: 16, y: 4 },
+    { x: 8, y: 14 }, { x: 16, y: 14 }
+  ]
 },
 {
   id: 5,
@@ -144,7 +171,24 @@ const levels: Level[] = [{
     { type: "teal", x: 300, y: 200, direction: 0 },
     { type: "teal", x: 500, y: 200, direction: 0 }
   ],
-  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Bunkers pour les ennemis teal (protections renforcées)
+  indestructibleWalls: [
+    // Bunker gauche
+    { x: 7, y: 7 }, { x: 8, y: 7 }, { x: 9, y: 7 },
+    { x: 7, y: 8 }, { x: 9, y: 8 },
+    { x: 7, y: 9 }, { x: 8, y: 9 }, { x: 9, y: 9 },
+    // Bunker droite  
+    { x: 15, y: 7 }, { x: 16, y: 7 }, { x: 17, y: 7 },
+    { x: 15, y: 8 }, { x: 17, y: 8 },
+    { x: 15, y: 9 }, { x: 16, y: 9 }, { x: 17, y: 9 },
+    // Obstacles centraux
+    { x: 12, y: 4 }, { x: 12, y: 14 }
+  ],
+  destructibleWalls: [
+    { x: 5, y: 8 }, { x: 19, y: 8 },
+    { x: 12, y: 8 }
+  ]
 },
 {
   id: 6,
@@ -155,7 +199,22 @@ const levels: Level[] = [{
     { type: "grey", x: 100, y: 300, direction: 0 },
     { type: "grey", x: 700, y: 300, direction: 0 }
   ],
-  dimensions: { width: 23 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
+  dimensions: { width: 23 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Maze-like pattern avec couloirs et impasses
+  indestructibleWalls: [
+    // Murs centraux créant un labyrinthe
+    { x: 8, y: 3 }, { x: 9, y: 3 }, { x: 10, y: 3 },
+    { x: 8, y: 6 }, { x: 8, y: 7 }, { x: 8, y: 8 },
+    { x: 13, y: 3 }, { x: 14, y: 3 }, { x: 15, y: 3 },
+    { x: 15, y: 6 }, { x: 15, y: 7 }, { x: 15, y: 8 },
+    // Obstacles bas
+    { x: 5, y: 12 }, { x: 6, y: 12 }, { x: 7, y: 12 },
+    { x: 16, y: 12 }, { x: 17, y: 12 }, { x: 18, y: 12 }
+  ],
+  destructibleWalls: [
+    { x: 11, y: 6 }, { x: 12, y: 6 },
+    { x: 6, y: 9 }, { x: 17, y: 9 }
+  ]
 },
 {
   id: 7,
@@ -200,7 +259,22 @@ const levels: Level[] = [{
     { type: "pink", x: 250, y: 200, direction: 0 },
     { type: "pink", x: 550, y: 200, direction: 0 }
   ],
-  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Arena fermée avec ouvertures stratégiques pour les tanks pink offensifs
+  indestructibleWalls: [
+    // Enceinte centrale avec ouvertures
+    { x: 8, y: 6 }, { x: 9, y: 6 }, { x: 10, y: 6 }, { x: 11, y: 6 },
+    { x: 13, y: 6 }, { x: 14, y: 6 }, { x: 15, y: 6 }, { x: 16, y: 6 },
+    { x: 8, y: 7 }, { x: 16, y: 7 },
+    { x: 8, y: 8 }, { x: 16, y: 8 },
+    { x: 8, y: 9 }, { x: 16, y: 9 },
+    { x: 8, y: 10 }, { x: 9, y: 10 }, { x: 10, y: 10 }, { x: 11, y: 10 },
+    { x: 13, y: 10 }, { x: 14, y: 10 }, { x: 15, y: 10 }, { x: 16, y: 10 }
+  ],
+  destructibleWalls: [
+    // Entrées destructibles
+    { x: 12, y: 6 }, { x: 12, y: 10 }
+  ]
 },
 {
   id: 11,
