@@ -28,21 +28,23 @@ export function setupControls() {
 
 export function updateControls(
   player: Tank,
-  _otherPlayer: Tank,
+  otherPlayer: Tank,
   bullets: Bullet[],
   onShoot?: (bullet: Bullet) => void
 ) {
+  const otherTanks = [otherPlayer]; // Array des autres tanks pour la collision
+  
   // Contrôles de mouvement cardinaux ZQSD
-  if (keys["z"] || keys["w"]) player.moveNorth();   // Z/W = Nord (Haut)
-  if (keys["s"]) player.moveSouth();                 // S = Sud (Bas)
-  if (keys["q"] || keys["a"]) player.moveWest();     // Q/A = Ouest (Gauche)
-  if (keys["d"]) player.moveEast();                  // D = Est (Droite)
+  if (keys["z"] || keys["w"]) player.moveNorth(otherTanks);   // Z/W = Nord (Haut)
+  if (keys["s"]) player.moveSouth(otherTanks);                 // S = Sud (Bas)
+  if (keys["q"] || keys["a"]) player.moveWest(otherTanks);     // Q/A = Ouest (Gauche)
+  if (keys["d"]) player.moveEast(otherTanks);                  // D = Est (Droite)
 
   // Contrôles alternatifs avec les flèches
-  if (keys["arrowup"]) player.moveNorth();
-  if (keys["arrowdown"]) player.moveSouth();
-  if (keys["arrowleft"]) player.moveWest();
-  if (keys["arrowright"]) player.moveEast();
+  if (keys["arrowup"]) player.moveNorth(otherTanks);
+  if (keys["arrowdown"]) player.moveSouth(otherTanks);
+  if (keys["arrowleft"]) player.moveWest(otherTanks);
+  if (keys["arrowright"]) player.moveEast(otherTanks);
 
   // Viser vers la souris (orienter le canon)
   player.aimAt(mouseX, mouseY);

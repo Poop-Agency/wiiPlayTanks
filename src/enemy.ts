@@ -21,7 +21,7 @@ export interface EnemyConfig {
 const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
   brown: {
     color: '#8B4513',
-    speed: FRAME_SPEEDS.tank.brown, // 0 px/frame - Immobile
+    speed: FRAME_SPEEDS.tank.pink * 0.5, // Lent - moitié de la vitesse standard
     canonSpeed: 0.008, // Lente (environ 1-2 secondes pour 90°)
     maxBullets: 1, // 1 balle active à la fois
     bulletSpeed: FRAME_SPEEDS.bullet.normal, // Balle normale
@@ -30,7 +30,7 @@ const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
   },
   grey: {
     color: '#808080',
-    speed: FRAME_SPEEDS.tank.grey, // ~0.83 px/frame - Lente patrouille
+    speed: 0, // 0 px/frame - Immobile (conformément au problème)
     canonSpeed: 0.025, // Moyenne – plus rapide que le Brown
     maxBullets: 1, // 1 balle à la fois
     bulletSpeed: FRAME_SPEEDS.bullet.normal, // Balle normale
@@ -170,10 +170,11 @@ export class Enemy {
     switch (this.config.aiType) {
       case 'weak':
         this.shootInterval = 4000 + Math.random() * 4000; // 4 à 8 secondes
-        this.moveInterval = 0; // Immobile
-        break;      case 'defensive':
+        this.moveInterval = 2000; // Mouvement lent pour brown (maintenant mobile)
+        break;
+      case 'defensive':
         this.shootInterval = 3000 + Math.random() * 2000; // 3 à 5 secondes
-        this.moveInterval = 2000; // Patrouille lente
+        this.moveInterval = 0; // Immobile pour grey (nouvellement immobile)
         break;
       case 'medium':
         this.shootInterval = 2500;

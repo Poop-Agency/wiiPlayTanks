@@ -97,58 +97,121 @@ export class Tank {
 
     return color;
   }  // Nouvelles méthodes de mouvement selon les directions cardinales
-  moveNorth() {
+  moveNorth(otherTanks: Tank[] = []) {
     const newY = this.y - this.speed;
-    if (this.canMoveTo(this.x, newY)) {
+    if (this.canMoveTo(this.x, newY, otherTanks)) {
       this.y = newY;
       this.direction = -Math.PI / 2; // Nord (vers le haut)
+    } else {
+      // Tenter de pousser d'autres tanks
+      this.tryPushTanks(this.x, newY, otherTanks);
     }
   }
 
-  moveSouth() {
+  moveSouth(otherTanks: Tank[] = []) {
     const newY = this.y + this.speed;
-    if (this.canMoveTo(this.x, newY)) {
+    if (this.canMoveTo(this.x, newY, otherTanks)) {
       this.y = newY;
       this.direction = Math.PI / 2; // Sud (vers le bas)
+    } else {
+      // Tenter de pousser d'autres tanks
+      this.tryPushTanks(this.x, newY, otherTanks);
     }
   }
 
-  moveEast() {
+  moveEast(otherTanks: Tank[] = []) {
     const newX = this.x + this.speed;
-    if (this.canMoveTo(newX, this.y)) {
+    if (this.canMoveTo(newX, this.y, otherTanks)) {
       this.x = newX;
       this.direction = 0; // Est (vers la droite)
+    } else {
+      // Tenter de pousser d'autres tanks
+      this.tryPushTanks(newX, this.y, otherTanks);
     }
   }
 
-  moveWest() {
+  moveWest(otherTanks: Tank[] = []) {
     const newX = this.x - this.speed;
-    if (this.canMoveTo(newX, this.y)) {
+    if (this.canMoveTo(newX, this.y, otherTanks)) {
       this.x = newX;
       this.direction = Math.PI; // Ouest (vers la gauche)
+    } else {
+      // Tenter de pousser d'autres tanks
+      this.tryPushTanks(newX, this.y, otherTanks);
     }
   }
 
   // Anciennes méthodes conservées pour compatibilité
-  moveForward() {
+  moveForward(otherTanks: Tank[] = []) {
     const newX = this.x + Math.cos(this.direction) * this.speed;
     const newY = this.y + Math.sin(this.direction) * this.speed;
 
-    if (this.canMoveTo(newX, newY)) {
+    if (this.canMoveTo(newX, newY, otherTanks)) {
       this.x = newX;
       this.y = newY;
+    } else {
+      // Tenter de pousser d'autres tanks
+      this.tryPushTanks(newX, newY, otherTanks);
     }
   }
 
-  moveBackward() {
+  moveBackward(otherTanks: Tank[] = []) {
     const newX = this.x - Math.cos(this.direction) * this.speed;
     const newY = this.y - Math.sin(this.direction) * this.speed;
 
-    if (this.canMoveTo(newX, newY)) {
+    if (this.canMoveTo(newX, newY, otherTanks)) {
       this.x = newX;
       this.y = newY;
+    } else {
+      // Tenter de pousser d'autres tanks
+      this.tryPushTanks(newX, newY, otherTanks);
     }
-  } private canMoveTo(x: number, y: number): boolean {    // Vérifier les limites de l'écran (en utilisant les nouvelles dimensions)
+  }
+
+  // Méthode pour tenter de pousser d'autres tanks
+  private tryPushTanks(newX: number, newY: number, otherTanks: Tank[]) {
+    const pushSpeed = this.speed * 0.5; // Vitesse de poussée à 50% de la vitesse normale
+    
+    for (const otherTank of otherTanks) {
+      if (otherTank !== this) {
+        const distance = Math.sqrt(
+          Math.pow(newX - otherTank.x, 2) + Math.pow(newY - otherTank.y, 2)
+        );
+        const minDistance = (Math.max(this.width, this.height) + Math.max(otherTank.width, otherTank.height)) / 2;
+        
+        if (distance < minDistance) {
+          // Calculer la direction de poussée
+          const pushDirectionX = (otherTank.x - newX) / distance;
+          const pushDirectionY = (otherTank.y - newY) / distance;
+          
+          // Calculer la nouvelle position pour l'autre tank
+          const pushedX = otherTank.x + pushDirectionX * pushSpeed;
+          const pushedY = otherTank.y + pushDirectionY * pushSpeed;
+          
+          // Vérifier si l'autre tank peut être poussé
+          if (otherTank.canMoveTo(pushedX, pushedY, otherTanks.filter(t => t !== otherTank))) {
+            // Pousser l'autre tank
+            otherTank.x = pushedX;
+            otherTank.y = pushedY;
+            
+            // Ce tank peut maintenant bouger aussi (légèrement moins pour ne pas se coller)
+            const moveScale = 0.8; // Se déplacer à 80% pour éviter le collage
+            const finalX = this.x + (newX - this.x) * moveScale;
+            const finalY = this.y + (newY - this.y) * moveScale;
+            
+            if (this.canMoveTo(finalX, finalY, otherTanks)) {
+              this.x = finalX;
+              this.y = finalY;
+            }
+            break; // On a réussi à pousser, sortir de la boucle
+          }
+        }
+      }
+    }
+  }
+
+  private canMoveTo(x: number, y: number, otherTanks: Tank[] = []): boolean {
+    // Vérifier les limites de l'écran (en utilisant les nouvelles dimensions)
     const halfWidth = this.width / 2;
     const halfHeight = this.height / 2;
 
@@ -168,6 +231,20 @@ export class Tank {
         y + halfHeight > wall.y &&
         y - halfHeight < wall.y + wall.h) {
         return false;
+      }
+    }
+
+    // Vérifier collision avec les autres tanks
+    for (const otherTank of otherTanks) {
+      if (otherTank !== this) {
+        const distance = Math.sqrt(
+          Math.pow(x - otherTank.x, 2) + Math.pow(y - otherTank.y, 2)
+        );
+        const minDistance = (Math.max(this.width, this.height) + Math.max(otherTank.width, otherTank.height)) / 2;
+        
+        if (distance < minDistance) {
+          return false;
+        }
       }
     }
 

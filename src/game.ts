@@ -312,7 +312,10 @@ function gameLoop() {
   checkBulletBulletCollisions();
 
   // Vérifier les autres collisions pour chaque balle restante
-  bullets.forEach((bullet, index) => {
+  // Utiliser un index descendant pour éviter les problèmes avec splice
+  for (let index = bullets.length - 1; index >= 0; index--) {
+    const bullet = bullets[index];
+    
     // Vérifier collision avec les murs (avec rebond)
     const previousRicochets = bullet.ricochetsUsed;
     if (bullet.checkCollisionAndRebound(walls)) {
@@ -321,28 +324,30 @@ function gameLoop() {
       bullets.splice(index, 1);
       // Retirer aussi de la liste du joueur correspondant
       removeBulletFromPlayer(bullet);
-      return;
+      continue;
     }
     
     // Si ricochet s'est produit, ajouter effets
     if (bullet.ricochetsUsed > previousRicochets) {
       effectsManager.createRicochetEffect(bullet.x, bullet.y, bullet.direction);
       playRicochetSound();
-    }    // Supprimer les bullets hors écran
+    }
+
+    // Supprimer les bullets hors écran
     const currentLevel = getCurrentLevel();
     const arenaWidth = currentLevel.dimensions?.width || 800;
     const arenaHeight = currentLevel.dimensions?.height || 600;
     if (bullet.x < 0 || bullet.x > arenaWidth || bullet.y < 0 || bullet.y > arenaHeight) {
       bullets.splice(index, 1);
       removeBulletFromPlayer(bullet);
-      return;
+      continue;
     }
 
     // Vérifier collision avec les tanks
     if (checkBulletTankCollision(bullet, index)) {
       removeBulletFromPlayer(bullet);
     }
-  });
+  }
   // Mettre à jour les ennemis
   const playerTanks = [player1, player2];
   enemies.forEach((enemy, enemyIndex) => {
@@ -362,10 +367,15 @@ function gameLoop() {
     });
   });
   // Vérifier les collisions entre balles des joueurs et ennemis
-  bullets.forEach((bullet, bulletIndex) => {
+  // Utiliser un index descendant pour éviter les problèmes avec splice
+  for (let bulletIndex = bullets.length - 1; bulletIndex >= 0; bulletIndex--) {
+    const bullet = bullets[bulletIndex];
+    let bulletHit = false;
+    
     // Collision balle joueur -> ennemi
     if (bullet.color === "#4CAF50" || bullet.color === "#F44336") { // Balles des joueurs
-      enemies.forEach((enemy, enemyIndex) => {
+      for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex--) {
+        const enemy = enemies[enemyIndex];
         if (enemy.isHitBy(bullet)) {
           // Déterminer quel joueur a tiré la balle et ajouter le score
           const scorer = bullet.color === "#4CAF50" ? 'player1' : 'player2';
@@ -391,6 +401,7 @@ function gameLoop() {
           enemies.splice(enemyIndex, 1);
           bullets.splice(bulletIndex, 1);
           removeBulletFromPlayer(bullet);
+          bulletHit = true;
 
           // Vérifier si tous les ennemis sont éliminés
           if (enemies.length === 0) {
@@ -406,21 +417,25 @@ function gameLoop() {
               goToNextLevel();
             }, 1000); // Délai de 1 seconde avant le niveau suivant
           }
-        }
-      });
-    }
-
-    // Collision balle ennemi -> joueur
-    enemies.forEach(enemy => {
-      if (enemy.getBullets().includes(bullet)) {
-        // Vérifier collision avec les joueurs
-        const playerHit = checkBulletTankCollision(bullet, bulletIndex);
-        if (playerHit) {
-          enemy.removeBullet(bullet);
+          break; // Sortir de la boucle des ennemis
         }
       }
-    });
-  });
+    }
+
+    // Si la balle n'a pas encore été supprimée, vérifier collision balle ennemi -> joueur
+    if (!bulletHit && bulletIndex < bullets.length) {
+      for (const enemy of enemies) {
+        if (enemy.getBullets().includes(bullet)) {
+          // Vérifier collision avec les joueurs
+          const playerHit = checkBulletTankCollision(bullet, bulletIndex);
+          if (playerHit) {
+            enemy.removeBullet(bullet);
+            break; // Sortir de la boucle des ennemis
+          }
+        }
+      }
+    }
+  }
 
   // Vérifier les collisions entre balles
   checkBulletBulletCollisions();
