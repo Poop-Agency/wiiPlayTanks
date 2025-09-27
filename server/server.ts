@@ -35,7 +35,7 @@ function broadcastToPlayers(message: string, sender?: WebSocket) {
   }
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws: WebSocket) => {
   console.log('Nouvelle connexion');
   
   // Assigner le rôle de spectateur par défaut
@@ -47,7 +47,7 @@ wss.on('connection', (ws) => {
   // Envoyer l'état actuel du jeu
   broadcastGameState();
   
-  ws.on('message', (message) => {
+  ws.on('message', (message: Buffer) => {
     try {
       const data = JSON.parse(message.toString());
       
@@ -192,7 +192,7 @@ wss.on('connection', (ws) => {
     broadcastGameState();
   });
 
-  ws.on('error', (error) => {
+  ws.on('error', (error: Error) => {
     console.error('Erreur WebSocket:', error);
   });
 });
