@@ -1,5 +1,6 @@
 // src/enemy.ts
 import { Bullet } from "./bullet.js";
+import { Mine } from "./mine.js";
 import { FRAME_SPEEDS, SPEEDS } from "./constants.js";
 import { walls, BLOCK_SIZE, getCurrentLevel } from "./level.js";
 
@@ -14,6 +15,7 @@ export interface EnemyConfig {
   bulletRicochets: number; // Nombre de ricochets autorisés
   aiType: 'weak' | 'defensive' | 'medium' | 'uncertain' | 'offensive' | 'precise' | 'aggressive';
   special?: string; // Effets spéciaux (invisibilité, etc.)
+  maxMines?: number; // Nombre maximum de mines (pour yellow et purple)
 }
 
 const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
@@ -51,7 +53,8 @@ const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     maxBullets: 1,
     bulletSpeed: FRAME_SPEEDS.bullet.normal, // Balle normale
     bulletRicochets: 1,
-    aiType: 'uncertain'
+    aiType: 'uncertain',
+    maxMines: 4 // 4 mines maximum
   },
   pink: {
     color: '#FF69B4',
@@ -78,7 +81,8 @@ const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     maxBullets: 5,
     bulletSpeed: FRAME_SPEEDS.bullet.normal, // Balles normales
     bulletRicochets: 1,
-    aiType: 'offensive'
+    aiType: 'offensive',
+    maxMines: 2 // 2 mines maximum
   },
   white: {
     color: '#FFFFFF',
@@ -88,7 +92,8 @@ const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     bulletSpeed: FRAME_SPEEDS.bullet.normal, // Balles normales
     bulletRicochets: 1,
     aiType: 'offensive',
-    special: 'invisible' // Invisibilité
+    special: 'invisible', // Invisibilité
+    maxMines: 2 // 2 mines maximum
   },
   black: {
     color: '#000000',
@@ -111,6 +116,7 @@ export class Enemy {
   width: number = 32;
   height: number = 24;
   bullets: Bullet[] = [];
+  mines: Mine[] = []; // Système de mines
   id: string; // Identifiant unique pour la synchronisation
 
   // IA properties
@@ -196,6 +202,21 @@ export class Enemy {
 
     // Mettre à jour l'effet de glow
     this.glowEffect = Math.sin(now * 0.005) * 0.5 + 0.5;
+
+    // Mettre à jour l'invisibilité pour les tanks blancs
+    if (this.config.special === 'invisible') {
+      // Alternance entre visible (alpha=1) et invisible (alpha=0.1) toutes les 2 secondes
+      const invisibilityPeriod = 4000; // 4 secondes par cycle
+      const cyclePosition = (now % invisibilityPeriod) / invisibilityPeriod;
+      
+      if (cyclePosition < 0.5) {
+        // Première moitié: visible
+        this.alpha = 1.0;
+      } else {
+        // Deuxième moitié: invisible
+        this.alpha = 0.15; // Presque transparent mais toujours visible pour le joueur
+      }
+    }
       // Ne calculer l'IA que si ce n'est pas contrôlé par le réseau
     if (!this.isNetworkControlled && sendNetworkUpdate) {
       const oldPos = { x: this.x, y: this.y, direction: this.direction, cannonDirection: this.cannonDirection };
@@ -252,6 +273,22 @@ export class Enemy {
         }
         this.lastShot = now; // Toujours mettre à jour le timer même si on n'a pas tiré
       }
+
+      // IA de mines - pour yellow et purple tanks
+      if ((this.config.maxMines && this.config.maxMines > 0) && 
+          this.mines.length < this.config.maxMines && 
+          Math.random() < 0.001) { // Faible chance de poser une mine à chaque frame
+        this.deployMine();
+        
+        // Envoyer message réseau pour synchroniser la mine
+        sendNetworkUpdate('enemyMine', {
+          type: 'enemyMine',
+          enemyId: this.id,
+          x: this.x,
+          y: this.y,
+          color: this.config.color
+        });
+      }
     }    // Nettoyer les balles expirées
     this.bullets = this.bullets.filter(bullet => {
       bullet.update();
@@ -260,6 +297,9 @@ export class Enemy {
       const arenaHeight = currentLevel.dimensions?.height || 600;
       return bullet.x >= 0 && bullet.x <= arenaWidth && bullet.y >= 0 && bullet.y <= arenaHeight;
     });
+
+    // Mettre à jour les mines
+    this.mines.forEach(mine => mine.update());
   }
     private updateMovement(playerTanks: any[]) {
     if (this.config.speed === 0) return; // Immobile
@@ -551,6 +591,9 @@ export class Enemy {
 
     // Dessiner les balles
     this.bullets.forEach(bullet => bullet.draw(ctx));
+
+    // Dessiner les mines
+    this.mines.forEach(mine => mine.draw(ctx));
   }
 
   private darkenColor(color: string, factor: number): string {
@@ -590,6 +633,34 @@ export class Enemy {
     if (index !== -1) {
       this.bullets.splice(index, 1);
     }
+  }
+
+  // Déployer une mine
+  deployMine() {
+    if (!this.config.maxMines || this.mines.length >= this.config.maxMines) return;
+    
+    const mine = new Mine(this.x, this.y, this.config.color);
+    this.mines.push(mine);
+  }
+
+  // Obtenir toutes les mines de cet ennemi
+  getMines(): Mine[] {
+    return this.mines;
+  }
+
+  // Supprimer une mine spécifique
+  removeMine(mine: Mine) {
+    const index = this.mines.indexOf(mine);
+    if (index !== -1) {
+      this.mines.splice(index, 1);
+    }
+  }
+
+  // Créer une mine depuis le réseau
+  createMineFromNetwork(x: number, y: number, color: string): Mine {
+    const mine = new Mine(x, y, color);
+    this.mines.push(mine);
+    return mine;
   }
   // Méthodes pour la synchronisation réseau
   updateFromNetwork(x: number, y: number, direction: number, cannonDirection: number) {

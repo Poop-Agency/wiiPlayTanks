@@ -5,6 +5,10 @@ import { setupControls, updateControls } from "./controls.js";
 import { drawLevel, walls, getPlayerSpawns, nextLevel, getCurrentLevelNumber, getTotalLevels, getEnemies, getCurrentLevel,resetToFirstLevel } from "./level.js";
 import { Enemy } from "./enemy.js";
 import { Role, MoveMessage, ShootMessage, EnemyMoveMessage, EnemyShootMessage, EnemyDeathMessage } from "./types.js";
+import { addScore, resetScores, getScores } from "./scoring.js";
+import { PowerUp, powerUpManager } from "./powerup.js";
+import { effectsManager } from "./effects.js";
+import { soundManager, initializeSound, playShootSound, playExplosionSound, playPowerUpSound, playEnemyDestroyedSound, playRicochetSound } from "./sound.js";
 
 let ctx: CanvasRenderingContext2D;
 let player1: Tank;
@@ -13,6 +17,7 @@ let enemies: Enemy[] = []; // Liste des ennemis
 const bullets: Bullet[] = [];
 const player1Bullets: Bullet[] = []; // Balles du joueur 1
 const player2Bullets: Bullet[] = []; // Balles du joueur 2
+const powerUps: PowerUp[] = []; // Power-ups actifs dans le niveau
 const MAX_BULLETS_PER_PLAYER = 4; // Limite de balles par joueur
 const GAME_TIMEOUT_MINUTES = 10; // Temps limite en minutes (paramètre modifiable)
 let gameRole: Role = 'spectator';
@@ -22,8 +27,10 @@ let lastCannonSentTime = 0;
 let gameStartTime = 0; // Timestamp du début de partie
 let gameLoopId = 0; // ID de la boucle de jeu pour pouvoir l'arrêter
 let gameRunning = false; // Flag pour savoir si le jeu tourne
+let lastPowerUpSpawn = 0; // Timestamp du dernier power-up spawné
 const NETWORK_UPDATE_INTERVAL = 50; // 20 FPS pour les mises à jour de position
 const CANNON_UPDATE_INTERVAL = 16; // ~60 FPS pour les mises à jour de visée (plus fluide)
+const POWERUP_SPAWN_INTERVAL = 15000; // 15 secondes entre les power-ups
 
 export function startGame(canvas: HTMLCanvasElement, role: Role, ws: WebSocket) {
   // Arrêter la boucle de jeu précédente si elle existe
@@ -43,11 +50,20 @@ export function startGame(canvas: HTMLCanvasElement, role: Role, ws: WebSocket) 
   // IMPORTANT: Remettre le jeu au niveau 1 (nouvelle partie)
   resetToFirstLevel();
   
+  // Réinitialiser les scores
+  resetScores();
+  
   // Réinitialiser complètement toutes les variables globales
   bullets.length = 0;
   player1Bullets.length = 0;
   player2Bullets.length = 0;
   enemies.length = 0;
+  powerUps.length = 0; // Réinitialiser les power-ups
+  
+  // Réinitialiser les effets visuels et sonores
+  effectsManager.clear();
+  initializeSound(); // Initialiser le système de son
+  lastPowerUpSpawn = Date.now(); // Réinitialiser le timer des power-ups
   
   // Créer les tanks avec des couleurs distinctes style Wii Play
   const spawns = getPlayerSpawns();
@@ -204,6 +220,37 @@ function sendEnemyNetworkUpdate(type: string, data: any) {
 }
 
 function gameLoop() {
+  const deltaTime = 16; // 16ms pour ~60fps
+  
+  // Mettre à jour les systèmes d'effets
+  effectsManager.update(deltaTime);
+  powerUpManager.update();
+  
+  // Spawner des power-ups périodiquement
+  const now = Date.now();
+  if (now - lastPowerUpSpawn > POWERUP_SPAWN_INTERVAL && powerUps.length < 2) {
+    spawnPowerUp();
+  }
+  
+  // Mettre à jour les power-ups
+  powerUps.forEach((powerUp, index) => {
+    powerUp.update(deltaTime);
+    
+    // Vérifier les collisions avec les joueurs
+    if (gameRole === 'player1' || gameRole === 'player2') {
+      const playerTank = gameRole === 'player1' ? player1 : player2;
+      if (powerUp.isCollectedBy(playerTank.x, playerTank.y)) {
+        const powerUpType = powerUp.collect();
+        powerUpManager.activatePowerUp(gameRole, powerUpType);
+        powerUps.splice(index, 1);
+        
+        // Effets visuels et sonores
+        effectsManager.createPowerUpEffect(powerUp.x, powerUp.y, powerUp.config.color);
+        playPowerUpSound();
+      }
+    }
+  });
+
   // Mettre à jour les contrôles seulement si on est un joueur actif
   if (gameRole === 'player1' || gameRole === 'player2') {
     const playerTank = gameRole === 'player1' ? player1 : player2;
@@ -211,14 +258,40 @@ function gameLoop() {
     const playerBullets = gameRole === 'player1' ? player1Bullets : player2Bullets;
     const previousPos = { x: playerTank.x, y: playerTank.y, direction: playerTank.direction, cannonDirection: playerTank.cannonDirection };
 
+    // Appliquer les effets des power-ups
+    applyPowerUpEffects(playerTank, gameRole);
+
     updateControls(playerTank, otherTank, bullets, (bullet) => {
-      // Vérifier si le joueur peut tirer (limite de 4 balles)
-      if (playerBullets.length < MAX_BULLETS_PER_PLAYER) {
-        bullets.push(bullet);
-        playerBullets.push(bullet);
+      // Vérifier si le joueur peut tirer (limite de 4 balles, modifiée par power-ups)
+      let maxBullets = MAX_BULLETS_PER_PLAYER;
+      if (powerUpManager.hasMultiShot(gameRole)) {
+        maxBullets = 8; // Plus de balles avec multishot
+      }
+      
+      if (playerBullets.length < maxBullets) {
+        // Tir multiple si power-up actif
+        if (powerUpManager.hasMultiShot(gameRole)) {
+          // Tirer 3 balles en éventail
+          const angles = [-0.3, 0, 0.3];
+          angles.forEach(angleOffset => {
+            const multiBullet = new Bullet(
+              bullet.x, bullet.y, 
+              bullet.direction + angleOffset, 
+              bullet.color
+            );
+            bullets.push(multiBullet);
+            playerBullets.push(multiBullet);
+          });
+        } else {
+          bullets.push(bullet);
+          playerBullets.push(bullet);
+        }
+        
+        playShootSound();
         sendNetworkUpdate(playerTank, 'shoot');
       }
     });
+    
     // Envoyer les mises à jour de position si le tank a bougé OU si le canon a tourné
     const positionChanged = previousPos.x !== playerTank.x ||
       previousPos.y !== playerTank.y ||
@@ -241,11 +314,20 @@ function gameLoop() {
   // Vérifier les autres collisions pour chaque balle restante
   bullets.forEach((bullet, index) => {
     // Vérifier collision avec les murs (avec rebond)
+    const previousRicochets = bullet.ricochetsUsed;
     if (bullet.checkCollisionAndRebound(walls)) {
+      // Effets visuels et sonores pour destruction de balle
+      effectsManager.particleSystem.createExplosion(bullet.x, bullet.y, bullet.color, 6);
       bullets.splice(index, 1);
       // Retirer aussi de la liste du joueur correspondant
       removeBulletFromPlayer(bullet);
       return;
+    }
+    
+    // Si ricochet s'est produit, ajouter effets
+    if (bullet.ricochetsUsed > previousRicochets) {
+      effectsManager.createRicochetEffect(bullet.x, bullet.y, bullet.direction);
+      playRicochetSound();
     }    // Supprimer les bullets hors écran
     const currentLevel = getCurrentLevel();
     const arenaWidth = currentLevel.dimensions?.width || 800;
@@ -285,6 +367,15 @@ function gameLoop() {
     if (bullet.color === "#4CAF50" || bullet.color === "#F44336") { // Balles des joueurs
       enemies.forEach((enemy, enemyIndex) => {
         if (enemy.isHitBy(bullet)) {
+          // Déterminer quel joueur a tiré la balle et ajouter le score
+          const scorer = bullet.color === "#4CAF50" ? 'player1' : 'player2';
+          addScore({
+            type: 'enemyKill',
+            target: enemy.type,
+            scorer: scorer,
+            points: 0 // Sera calculé automatiquement selon le type d'ennemi
+          });
+
           // Envoyer le message de mort de l'ennemi si on est player1
           if (gameRole === 'player1') {
             sendEnemyNetworkUpdate('enemyDeath', {
@@ -293,13 +384,24 @@ function gameLoop() {
             });
           }
 
-          // Ennemi touché, le supprimer
+          // Ennemi touché, le supprimer avec effets
+          effectsManager.createTankExplosion(enemy.x, enemy.y, enemy.config.color);
+          playEnemyDestroyedSound(enemy.type);
+          
           enemies.splice(enemyIndex, 1);
           bullets.splice(bulletIndex, 1);
           removeBulletFromPlayer(bullet);
 
           // Vérifier si tous les ennemis sont éliminés
           if (enemies.length === 0) {
+            // Bonus pour compléter le niveau
+            addScore({
+              type: 'levelComplete',
+              target: `level${getCurrentLevelNumber()}`,
+              scorer: scorer,
+              points: 0 // Sera calculé automatiquement
+            });
+
             setTimeout(() => {
               goToNextLevel();
             }, 1000); // Délai de 1 seconde avant le niveau suivant
@@ -346,10 +448,30 @@ function checkBulletTankCollision(bullet: Bullet, bulletIndex: number): boolean 
     const collisionRadius = Math.max(tank.width, tank.height) / 2 + bullet.radius;
 
     if (distance < collisionRadius) { // Utiliser les vraies dimensions
-      // Collision détectée
+      // Collision détectée - déterminer qui a marqué des points
+      if (bullet.color === "#4CAF50" && tank.id === 'player2') {
+        // Joueur 1 touche joueur 2
+        addScore({
+          type: 'playerKill',
+          target: 'player2',
+          scorer: 'player1',
+          points: 0
+        });
+      } else if (bullet.color === "#F44336" && tank.id === 'player1') {
+        // Joueur 2 touche joueur 1
+        addScore({
+          type: 'playerKill',
+          target: 'player1',
+          scorer: 'player2',
+          points: 0
+        });
+      }
+
       bullets.splice(bulletIndex, 1);
 
-      // Effet de respawn style Wii Play
+      // Effet de respawn style Wii Play avec nouveaux effets
+      effectsManager.createTankExplosion(tank.x, tank.y, tank.color);
+      playExplosionSound();
       respawnTank(tank);
       return true; // Collision détectée
     }
@@ -409,15 +531,31 @@ function drawGame() {
   // Dessiner le niveau
   drawLevel(ctx);
 
+  // Dessiner les power-ups (arrière-plan)
+  powerUps.forEach(powerUp => powerUp.draw(ctx));
+
+  // Dessiner les effets d'explosion et particules (arrière-plan)
+  effectsManager.draw(ctx);
+
   // Dessiner les ennemis
   enemies.forEach(enemy => enemy.draw(ctx));
 
-  // Dessiner les tanks des joueurs
+  // Dessiner les tanks des joueurs avec effets de bouclier
+  if (powerUpManager.hasShield('player1')) {
+    drawShieldEffect(ctx, player1);
+  }
   player1.draw(ctx);
+  
+  if (powerUpManager.hasShield('player2')) {
+    drawShieldEffect(ctx, player2);
+  }
   player2.draw(ctx);
 
   // Dessiner les bullets
   bullets.forEach((bullet) => bullet.draw(ctx));
+
+  // Dessiner l'UI avec les power-ups actifs
+  drawUI();
 }
 
 function drawUI() {
@@ -452,13 +590,36 @@ function drawUI() {
     const seconds = Math.floor((gameTimeMs % 60000) / 1000);
     ctx.fillText(`Temps: ${minutes}:${seconds.toString().padStart(2, '0')}`, 20, 90);
 
+    // Afficher les power-ups actifs
+    if (gameRole === 'player1' || gameRole === 'player2') {
+      powerUpManager.drawActivePowerUps(ctx, gameRole, 20, 110);
+    }
+
     // Vérifier le timeout
     if (minutes >= GAME_TIMEOUT_MINUTES) {
       ctx.fillStyle = '#ff4444';
-      ctx.fillText('TEMPS ÉCOULÉ !', 20, 110);
+      ctx.fillText('TEMPS ÉCOULÉ !', 20, 130);
     }
   }
 
+  ctx.restore();
+}
+
+// Fonction pour dessiner l'effet de bouclier
+function drawShieldEffect(ctx: CanvasRenderingContext2D, tank: Tank) {
+  ctx.save();
+  
+  const time = Date.now() * 0.005;
+  const alpha = 0.3 + Math.sin(time) * 0.2;
+  
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#4169E1';
+  ctx.lineWidth = 3;
+  
+  ctx.beginPath();
+  ctx.arc(tank.x, tank.y, Math.max(tank.width, tank.height) / 2 + 8, 0, Math.PI * 2);
+  ctx.stroke();
+  
   ctx.restore();
 }
 
@@ -694,4 +855,33 @@ function resizeCanvas() {
   const canvas = ctx.canvas;
   canvas.width = currentLevel.dimensions?.width || 800;
   canvas.height = currentLevel.dimensions?.height || 600;
+}
+
+// Fonctions pour le système de power-ups
+function spawnPowerUp() {
+  const currentLevel = getCurrentLevel();
+  const arenaWidth = currentLevel.dimensions?.width || 800;
+  const arenaHeight = currentLevel.dimensions?.height || 600;
+  
+  // Position aléatoire mais pas trop près des bords
+  const margin = 50;
+  const x = margin + Math.random() * (arenaWidth - 2 * margin);
+  const y = margin + Math.random() * (arenaHeight - 2 * margin);
+  
+  // Type de power-up aléatoire
+  const types = ['speed', 'fireRate', 'multiShot', 'shield', 'rapidFire'];
+  const randomType = types[Math.floor(Math.random() * types.length)];
+  
+  powerUps.push(new PowerUp(x, y, randomType as any));
+  lastPowerUpSpawn = Date.now();
+  
+  console.log(`Power-up ${randomType} spawné à (${Math.round(x)}, ${Math.round(y)})`);
+}
+
+function applyPowerUpEffects(tank: Tank, playerId: string) {
+  // Appliquer le multiplicateur de vitesse
+  const baseSpeed = tank.speed;
+  tank.speed = baseSpeed * powerUpManager.getSpeedMultiplier(playerId);
+  
+  // Note: Les autres effets (tir, bouclier) sont gérés dans le gameLoop et les contrôles
 }

@@ -124,6 +124,21 @@ const levels: Level[] = [{
     { type: "grey", x: 200, y: 100, direction: 0 },
     { type: "grey", x: 600, y: 100, direction: 0 },
     { type: "brown", x: 400, y: 200, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Murs en T et L-shapes pour protection et stratégie
+  indestructibleWalls: [
+    // Mur en T au centre-haut
+    { x: 11, y: 5 }, { x: 12, y: 5 }, { x: 13, y: 5 },
+    { x: 12, y: 6 }, { x: 12, y: 7 },
+    // Murs L dans les coins
+    { x: 6, y: 4 }, { x: 7, y: 4 }, { x: 6, y: 5 },
+    { x: 17, y: 4 }, { x: 18, y: 4 }, { x: 18, y: 5 },
+    // Obstacles bas
+    { x: 9, y: 12 }, { x: 10, y: 12 }, { x: 14, y: 12 }, { x: 15, y: 12 }
+  ],
+  destructibleWalls: [
+    { x: 8, y: 8 }, { x: 16, y: 8 }
   ]
 },
 {
@@ -133,6 +148,20 @@ const levels: Level[] = [{
     { type: "grey", x: 150, y: 120, direction: 0 },
     { type: "grey", x: 650, y: 120, direction: 0 },
     { type: "brown", x: 400, y: 300, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Murs en croix au centre plus des couloirs
+  indestructibleWalls: [
+    // Croix principale au centre
+    { x: 12, y: 7 }, { x: 12, y: 8 }, { x: 12, y: 9 }, { x: 12, y: 10 }, { x: 12, y: 11 },
+    { x: 10, y: 9 }, { x: 11, y: 9 }, { x: 13, y: 9 }, { x: 14, y: 9 },
+    // Couloirs horizontaux
+    { x: 5, y: 6 }, { x: 6, y: 6 }, { x: 18, y: 6 }, { x: 19, y: 6 },
+    { x: 5, y: 12 }, { x: 6, y: 12 }, { x: 18, y: 12 }, { x: 19, y: 12 }
+  ],
+  destructibleWalls: [
+    { x: 8, y: 4 }, { x: 16, y: 4 },
+    { x: 8, y: 14 }, { x: 16, y: 14 }
   ]
 },
 {
@@ -141,170 +170,233 @@ const levels: Level[] = [{
   enemies: [
     { type: "teal", x: 300, y: 200, direction: 0 },
     { type: "teal", x: 500, y: 200, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Bunkers pour les ennemis teal (protections renforcées)
+  indestructibleWalls: [
+    // Bunker gauche
+    { x: 7, y: 7 }, { x: 8, y: 7 }, { x: 9, y: 7 },
+    { x: 7, y: 8 }, { x: 9, y: 8 },
+    { x: 7, y: 9 }, { x: 8, y: 9 }, { x: 9, y: 9 },
+    // Bunker droite  
+    { x: 15, y: 7 }, { x: 16, y: 7 }, { x: 17, y: 7 },
+    { x: 15, y: 8 }, { x: 17, y: 8 },
+    { x: 15, y: 9 }, { x: 16, y: 9 }, { x: 17, y: 9 },
+    // Obstacles centraux
+    { x: 12, y: 4 }, { x: 12, y: 14 }
+  ],
+  destructibleWalls: [
+    { x: 5, y: 8 }, { x: 19, y: 8 },
+    { x: 12, y: 8 }
   ]
 },
 {
   id: 6,
   walls: [],
   enemies: [
-    { type: "teal", x: null, y: null, direction: 0 }, // Pas de coordonnées = pas créé
-    { type: "teal", x: null, y: null, direction: 0 }, // Pas de coordonnées = pas créé
-    { type: "grey", x: null, y: null, direction: 0 }, // Pas de coordonnées = pas créé
-    { type: "grey", x: null, y: null, direction: 0 }  // Pas de coordonnées = pas créé
+    { type: "teal", x: 200, y: 150, direction: 0 },
+    { type: "teal", x: 600, y: 150, direction: 0 },
+    { type: "grey", x: 100, y: 300, direction: 0 },
+    { type: "grey", x: 700, y: 300, direction: 0 }
+  ],
+  dimensions: { width: 23 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Maze-like pattern avec couloirs et impasses
+  indestructibleWalls: [
+    // Murs centraux créant un labyrinthe
+    { x: 8, y: 3 }, { x: 9, y: 3 }, { x: 10, y: 3 },
+    { x: 8, y: 6 }, { x: 8, y: 7 }, { x: 8, y: 8 },
+    { x: 13, y: 3 }, { x: 14, y: 3 }, { x: 15, y: 3 },
+    { x: 15, y: 6 }, { x: 15, y: 7 }, { x: 15, y: 8 },
+    // Obstacles bas
+    { x: 5, y: 12 }, { x: 6, y: 12 }, { x: 7, y: 12 },
+    { x: 16, y: 12 }, { x: 17, y: 12 }, { x: 18, y: 12 }
+  ],
+  destructibleWalls: [
+    { x: 11, y: 6 }, { x: 12, y: 6 },
+    { x: 6, y: 9 }, { x: 17, y: 9 }
   ]
 },
 {
   id: 7,
   walls: [],
   enemies: [
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 }
-  ]
+    { type: "teal", x: 150, y: 100, direction: 0 },
+    { type: "teal", x: 400, y: 100, direction: 0 },
+    { type: "teal", x: 650, y: 100, direction: 0 },
+    { type: "teal", x: 400, y: 350, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 8,
   walls: [],
   enemies: [
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 }
-  ]
+    { type: "yellow", x: 120, y: 120, direction: 0 },
+    { type: "yellow", x: 680, y: 120, direction: 0 },
+    { type: "yellow", x: 400, y: 180, direction: 0 },
+    { type: "teal", x: 200, y: 350, direction: 0 },
+    { type: "teal", x: 600, y: 350, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 9,
   walls: [],
   enemies: [
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "grey", x: null, y: null, direction: 0 },
-    { type: "grey", x: null, y: null, direction: 0 },
-    { type: "grey", x: null, y: null, direction: 0 },
-    { type: "grey", x: null, y: null, direction: 0 }
-  ]
+    { type: "yellow", x: 300, y: 100, direction: 0 },
+    { type: "yellow", x: 500, y: 100, direction: 0 },
+    { type: "grey", x: 100, y: 200, direction: 0 },
+    { type: "grey", x: 350, y: 250, direction: 0 },
+    { type: "grey", x: 450, y: 250, direction: 0 },
+    { type: "grey", x: 700, y: 200, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 10,
   walls: [],
   enemies: [
-    { type: "pink", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 }
+    { type: "pink", x: 250, y: 200, direction: 0 },
+    { type: "pink", x: 550, y: 200, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE },
+  // Arena fermée avec ouvertures stratégiques pour les tanks pink offensifs
+  indestructibleWalls: [
+    // Enceinte centrale avec ouvertures
+    { x: 8, y: 6 }, { x: 9, y: 6 }, { x: 10, y: 6 }, { x: 11, y: 6 },
+    { x: 13, y: 6 }, { x: 14, y: 6 }, { x: 15, y: 6 }, { x: 16, y: 6 },
+    { x: 8, y: 7 }, { x: 16, y: 7 },
+    { x: 8, y: 8 }, { x: 16, y: 8 },
+    { x: 8, y: 9 }, { x: 16, y: 9 },
+    { x: 8, y: 10 }, { x: 9, y: 10 }, { x: 10, y: 10 }, { x: 11, y: 10 },
+    { x: 13, y: 10 }, { x: 14, y: 10 }, { x: 15, y: 10 }, { x: 16, y: 10 }
+  ],
+  destructibleWalls: [
+    // Entrées destructibles
+    { x: 12, y: 6 }, { x: 12, y: 10 }
   ]
 },
 {
   id: 11,
   walls: [],
   enemies: [
-    { type: "pink", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "grey", x: null, y: null, direction: 0 },
-    { type: "grey", x: null, y: null, direction: 0 }
-  ]
+    { type: "pink", x: 200, y: 120, direction: 0 },
+    { type: "pink", x: 600, y: 120, direction: 0 },
+    { type: "teal", x: 300, y: 250, direction: 0 },
+    { type: "teal", x: 500, y: 250, direction: 0 },
+    { type: "grey", x: 150, y: 350, direction: 0 },
+    { type: "grey", x: 650, y: 350, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 12,
   walls: [],
   enemies: [
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 }
-  ]
+    { type: "green", x: 300, y: 150, direction: 0 },
+    { type: "green", x: 500, y: 150, direction: 0 },
+    { type: "pink", x: 200, y: 300, direction: 0 },
+    { type: "pink", x: 600, y: 300, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 13,
   walls: [],
   enemies: [
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "yellow", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 }
-  ]
+    { type: "yellow", x: 180, y: 120, direction: 0 },
+    { type: "yellow", x: 400, y: 120, direction: 0 },
+    { type: "yellow", x: 620, y: 120, direction: 0 },
+    { type: "teal", x: 250, y: 280, direction: 0 },
+    { type: "teal", x: 400, y: 300, direction: 0 },
+    { type: "teal", x: 550, y: 280, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 14,
   walls: [],
   enemies: [
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 }
-  ]
+    { type: "green", x: 200, y: 120, direction: 0 },
+    { type: "green", x: 400, y: 120, direction: 0 },
+    { type: "green", x: 600, y: 120, direction: 0 },
+    { type: "pink", x: 150, y: 300, direction: 0 },
+    { type: "pink", x: 400, y: 280, direction: 0 },
+    { type: "pink", x: 650, y: 300, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 15,
   walls: [],
   enemies: [
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 }
-  ]
+    { type: "purple", x: 250, y: 150, direction: 0 },
+    { type: "purple", x: 400, y: 200, direction: 0 },
+    { type: "purple", x: 550, y: 150, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 16,
   walls: [],
   enemies: [
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 }
-  ]
+    { type: "purple", x: 180, y: 120, direction: 0 },
+    { type: "purple", x: 400, y: 150, direction: 0 },
+    { type: "purple", x: 620, y: 120, direction: 0 },
+    { type: "green", x: 300, y: 300, direction: 0 },
+    { type: "green", x: 500, y: 300, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 17,
   walls: [],
   enemies: [
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 }
-  ]
+    { type: "green", x: 150, y: 120, direction: 0 },
+    { type: "green", x: 300, y: 120, direction: 0 },
+    { type: "green", x: 500, y: 120, direction: 0 },
+    { type: "green", x: 650, y: 120, direction: 0 },
+    { type: "green", x: 300, y: 300, direction: 0 },
+    { type: "green", x: 500, y: 300, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 18,
   walls: [],
   enemies: [
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "green", x: null, y: null, direction: 0 },
-    { type: "pink", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 },
-    { type: "teal", x: null, y: null, direction: 0 }
-  ]
+    { type: "purple", x: 200, y: 120, direction: 0 },
+    { type: "purple", x: 600, y: 120, direction: 0 },
+    { type: "green", x: 400, y: 180, direction: 0 },
+    { type: "pink", x: 150, y: 280, direction: 0 },
+    { type: "teal", x: 350, y: 350, direction: 0 },
+    { type: "teal", x: 450, y: 350, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 19,
   walls: [],
   enemies: [
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 },
-    { type: "purple", x: null, y: null, direction: 0 }
-  ]
+    { type: "purple", x: 120, y: 100, direction: 0 },
+    { type: "purple", x: 280, y: 120, direction: 0 },
+    { type: "purple", x: 400, y: 100, direction: 0 },
+    { type: "purple", x: 520, y: 120, direction: 0 },
+    { type: "purple", x: 680, y: 100, direction: 0 },
+    { type: "purple", x: 200, y: 280, direction: 0 },
+    { type: "purple", x: 400, y: 300, direction: 0 },
+    { type: "purple", x: 600, y: 280, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 },
 {
   id: 20,
   walls: [],
   enemies: [
-    { type: "white", x: null, y: null, direction: 0 },
-    { type: "white", x: null, y: null, direction: 0 }
-  ]
+    { type: "white", x: 300, y: 200, direction: 0 },
+    { type: "white", x: 500, y: 200, direction: 0 }
+  ],
+  dimensions: { width: 25 * BLOCK_SIZE, height: 19 * BLOCK_SIZE }
 }
 ];
 
