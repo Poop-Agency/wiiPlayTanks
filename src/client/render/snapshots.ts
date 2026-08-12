@@ -44,6 +44,15 @@ export interface ShellView {
   y: number;
   /** Orientation du déplacement, pour dessiner un missile dans son axe. */
   heading: number;
+  /**
+   * Rebonds restants.
+   *
+   * Exposé au rendu pour une seule raison : c'est la seule façon, en comparant
+   * deux instantanés, de savoir qu'un obus vient de ricocher — et donc de
+   * placer une gerbe d'étincelles et un son au bon endroit (#14). La simulation
+   * n'émet aucun évènement, par choix.
+   */
+  bouncesLeft: number;
 }
 
 export interface MineView {
@@ -105,6 +114,7 @@ export function captureSnapshot(world: World): RenderSnapshot {
       x: shell.x,
       y: shell.y,
       heading: Math.atan2(shell.vy, shell.vx),
+      bouncesLeft: shell.bouncesLeft,
     })),
 
     mines: world.mines.map((mine) => {

@@ -58,7 +58,7 @@ describe('profils — conformité aux relevés', () => {
   });
 
   test('les multiplicateurs de vitesse correspondent aux valeurs relevées', () => {
-    // Relevés dans legacy/src/constants.ts.
+    // Relevés sur le jeu original — voir docs/provenance.md.
     expect(profileOf('brown').speedMultiplier).toBe(0);
     expect(profileOf('green').speedMultiplier).toBe(0);
     expect(profileOf('ash').speedMultiplier).toBe(0.5);
@@ -71,7 +71,7 @@ describe('profils — conformité aux relevés', () => {
   });
 
   test('les armements correspondent aux valeurs relevées', () => {
-    // Relevés dans legacy/src/enemy.ts (maxBullets, bulletRicochets, bulletSpeed).
+    // Relevés sur le jeu original : obus simultanés, ricochets, vitesse.
     const expected: Partial<Record<TankColor, [shells: number, bounces: number, fast: boolean]>> = {
       brown: [1, 1, false],
       ash: [1, 1, false],

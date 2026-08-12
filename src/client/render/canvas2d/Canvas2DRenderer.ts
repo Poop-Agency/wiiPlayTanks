@@ -12,6 +12,8 @@ import { TILE_SIZE_PX, TUNING } from '@core/tuning';
 import { tileAt } from '@core/grid';
 import { BLAST, BLOCKS, BOARD, SHELL, TANK_COLORS, darken, lighten } from '../palette';
 import type { DebugOptions } from '../../ui/tuning-panel';
+import { NO_EFFECTS } from '../effects';
+import type { EffectsView, Particle, Shockwave, TrackMark } from '../effects';
 import { drawDebugOverlay } from './debug-overlay';
 import type { Renderer } from '../Renderer';
 import type {
@@ -94,7 +96,7 @@ export class Canvas2DRenderer implements Renderer {
     };
   }
 
-  draw(grid: Grid, view: RenderSnapshot): void {
+  draw(grid: Grid, view: RenderSnapshot, effects: EffectsView = NO_EFFECTS): void {
     // Le cache se reconstruit sur changement de version plutôt que sur appel
     // explicite : personne ne peut oublier de signaler une destruction de bloc.
     if (this.#terrainStale || grid !== this.#terrainGrid || grid.version !== this.#terrainVersion) {
@@ -110,10 +112,19 @@ export class Canvas2DRenderer implements Renderer {
 
     if (this.#terrain) this.#ctx.drawImage(this.#terrain, 0, 0);
 
-    // Les mines au sol, sous tout le reste : un tank posé dessus doit rester
-    // visible.
+    // Les traces de chenilles font partie du sol : sous tout le reste, y compris
+    // sous les épaves.
+    this.#drawTracks(effects.tracks);
+
+    // Les mines au sol : un tank posé dessus doit rester visible.
     for (const mine of view.mines) {
       this.#drawMine(mine);
+    }
+
+    // Les épaves avant les vivants : un tank détruit ne doit pas masquer celui
+    // qui passe dessus.
+    for (const tank of view.tanks) {
+      if (!tank.alive) this.#drawWreck(tank);
     }
 
     for (const tank of view.tanks) {
@@ -129,6 +140,8 @@ export class Canvas2DRenderer implements Renderer {
     for (const explosion of view.explosions) {
       this.#drawExplosion(explosion);
     }
+
+    this.#drawParticles(effects);
 
     this.#ctx.restore();
   }
@@ -246,6 +259,110 @@ export class Canvas2DRenderer implements Renderer {
         ctx.fillRect(dotX, dotY, 3, 3);
       }
     }
+  }
+
+  /* ── Effets décoratifs ───────────────────────────────────────────────── */
+
+  /** Traces de chenilles, dessinées à même le sol. */
+  #drawTracks(tracks: readonly TrackMark[]): void {
+    const ctx = this.#ctx;
+    const size = TUNING.tank.sizeTiles * TILE_SIZE_PX;
+    const half = size / 2;
+    const spacing = size * 0.31;
+
+    ctx.fillStyle = BOARD.trackMark;
+
+    for (const track of tracks) {
+      // Sauvegarde par marque plutôt qu'une remise à zéro de la transformation :
+      // celle du plateau appartient à `draw`, et la recomposer ici la
+      // dupliquerait — donc la ferait diverger le jour où elle change.
+      ctx.save();
+
+      // L'opacité maximale reste faible : ce sont des marques au sol, pas des
+      // traits de peinture, et elles s'accumulent par centaines.
+      ctx.globalAlpha = track.life * 0.22;
+      ctx.translate(track.x * TILE_SIZE_PX, track.y * TILE_SIZE_PX);
+      ctx.rotate(track.angle);
+      ctx.fillRect(-half * 0.5, -spacing - 2, half, 3);
+      ctx.fillRect(-half * 0.5, spacing - 1, half, 3);
+
+      ctx.restore();
+    }
+  }
+
+  /** Débris, étincelles et ondes de choc, au-dessus de la mêlée. */
+  #drawParticles({ particles, shockwaves }: EffectsView): void {
+    const ctx = this.#ctx;
+
+    ctx.save();
+    for (const wave of shockwaves) this.#drawShockwave(wave);
+    for (const particle of particles) this.#drawParticle(particle);
+    ctx.restore();
+  }
+
+  #drawParticle(particle: Particle): void {
+    const ctx = this.#ctx;
+
+    ctx.globalAlpha = Math.min(1, particle.life / particle.span);
+    ctx.fillStyle = particle.color;
+    ctx.beginPath();
+    ctx.arc(
+      particle.x * TILE_SIZE_PX,
+      particle.y * TILE_SIZE_PX,
+      particle.size,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  #drawShockwave(wave: Shockwave): void {
+    const ctx = this.#ctx;
+    const progress = 1 - wave.life / wave.span;
+
+    // L'anneau s'élargit en s'effaçant : c'est ce qui donne l'impression du
+    // souffle, plutôt qu'un cercle qui grossit à opacité constante.
+    ctx.globalAlpha = (1 - progress) * 0.55;
+    ctx.strokeStyle = BLAST.fireCore;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(
+      wave.x * TILE_SIZE_PX,
+      wave.y * TILE_SIZE_PX,
+      wave.radius * TILE_SIZE_PX * progress,
+      0,
+      Math.PI * 2,
+    );
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Épave d'un tank détruit.
+   *
+   * Écrasée et noircie, comme dans l'original où le tank touché s'aplatit au
+   * sol plutôt que de disparaître. C'est la trace de ce qui s'est passé, et elle
+   * dit au joueur où le coup est parti.
+   */
+  #drawWreck(tank: TankView): void {
+    const ctx = this.#ctx;
+    const size = TUNING.tank.sizeTiles * TILE_SIZE_PX;
+    const half = size / 2;
+
+    ctx.save();
+    ctx.translate(tank.x * TILE_SIZE_PX, tank.y * TILE_SIZE_PX);
+    ctx.rotate(tank.bodyAngle);
+    ctx.scale(1, 0.45);
+
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = darken(TANK_COLORS[tank.color], 0.62);
+    ctx.fillRect(-half, -half * 0.62, size, size * 0.62);
+
+    ctx.strokeStyle = darken(TANK_COLORS[tank.color], 0.8);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-half + 0.5, -half * 0.62 + 0.5, size - 1, size * 0.62 - 1);
+    ctx.restore();
   }
 
   /* ── Tanks ───────────────────────────────────────────────────────────── */

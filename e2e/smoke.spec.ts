@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { waitForGame } from './helpers';
+
 /**
  * Le jeu vit entièrement dans un canevas : il n'y a pas de DOM à interroger.
  * Les vérifications passent donc par la lecture de pixels et par l'état exposé
@@ -13,7 +15,8 @@ test('la page se charge et peint le canevas sans erreur console', async ({ page 
   });
   page.on('pageerror', (error) => consoleErrors.push(error.message));
 
-  await page.goto('/');
+  await page.goto('/?mission=1');
+  await waitForGame(page);
 
   const canvas = page.locator('#game');
   await expect(canvas).toBeVisible();
@@ -61,6 +64,7 @@ test('la simulation avance à 60 pas par seconde de temps réel', async ({ page 
   // qui rendrait la mesure absurde. Ce qu'on vérifie ici est la cadence de la
   // boucle, pas le déroulement d'une partie.
   await page.goto('/?bac=1&calme=1');
+  await waitForGame(page);
 
   // On mesure sur le compteur de pas de la simulation et sur l'horloge du
   // navigateur, sans faire confiance à la cadence d'affichage : c'est

@@ -16,6 +16,8 @@ export const BOARD = {
   floorAlternate: '#c3a06d',
   /** Ombre portée des blocs et des tanks. */
   shadow: 'rgba(60, 40, 20, 0.28)',
+  /** Marque de chenille laissée au sol. Plus sombre que le plateau, à peine. */
+  trackMark: '#8f7448',
 };
 
 export const BLOCKS = {

@@ -27,7 +27,7 @@ async function destroy(page: import('@playwright/test').Page, side: 'player' | '
 }
 
 test('la campagne démarre sur la première mission', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?mission=1');
   await page.waitForFunction(() => window.__tanks?.campaign !== undefined);
 
   const view = await campaign(page);
@@ -61,7 +61,7 @@ test('un numéro de mission hors bornes retombe dans la campagne', async ({ page
 });
 
 test('détruire tous les ennemis fait passer à la mission suivante', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?mission=1');
   await page.waitForFunction(() => window.__tanks?.campaign !== undefined);
 
   await destroy(page, 'enemies');

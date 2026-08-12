@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { waitForGame } from './helpers';
+
 // La déclaration de `window.__tanks` vit dans src/client/debug-bridge.ts.
 import '../src/client/debug-bridge';
 
@@ -31,7 +33,7 @@ async function hold(
 
 test('le clavier déplace le tank', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   const before = await tankPosition(page);
   await hold(page, ['KeyW'], 700);
@@ -43,7 +45,7 @@ test('le clavier déplace le tank', async ({ page }) => {
 
 test('le tank longe le mur au lieu de s\'y bloquer', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   const grid = await page.evaluate(() => ({
     width: window.__tanks!.world.grid.width,
@@ -68,7 +70,7 @@ test('le tank longe le mur au lieu de s\'y bloquer', async ({ page }) => {
 
 test('relâcher le focus arrête le tank', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(300);
@@ -89,7 +91,7 @@ test('relâcher le focus arrête le tank', async ({ page }) => {
 
 test('la souris oriente la tourelle', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   const box = await page.locator('#game').boundingBox();
   if (!box) throw new Error('canevas introuvable');

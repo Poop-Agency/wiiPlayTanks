@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { waitForGame } from './helpers';
+
 // La déclaration de `window.__tanks` vit dans src/client/debug-bridge.ts.
 import '../src/client/debug-bridge';
 
@@ -65,7 +67,7 @@ async function watchMovement(page: Page): Promise<void> {
 
 test('les ennemis sont présents et se comportent selon leur couleur', async ({ page }) => {
   await page.goto('/?bac=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   const start = await survey(page);
   const enemies = start.filter((tank) => tank.isAi);
@@ -92,7 +94,7 @@ test('les ennemis sont présents et se comportent selon leur couleur', async ({ 
 
 test('un ennemi finit par ouvrir le feu sur le joueur', async ({ page }) => {
   await page.goto('/?bac=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   // Observation frame par frame dans la page : un obus traverse l'arène en
   // quelques secondes et un sondage depuis Node manquerait la fenêtre.
@@ -125,7 +127,7 @@ test('un ennemi finit par ouvrir le feu sur le joueur', async ({ page }) => {
 
 test('les tanks ne se superposent jamais', async ({ page }) => {
   await page.goto('/?bac=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   // Deux tanks empilés se comportent comme un seul et sont illisibles à
   // l'écran. Ils sont des obstacles les uns pour les autres.

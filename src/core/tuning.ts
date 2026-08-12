@@ -23,13 +23,13 @@ export const TILE_SIZE_PX = 32;
 /* ───────────────────────────────────────────────────────────────────────────
  * Mesures de référence
  *
- * Relevées image par image sur le jeu original et documentées dans
- * `legacy/src/constants.ts`. Ce sont les seuls faits observables dont on
- * dispose ; tout le reste en est dérivé.
+ * Relevées image par image sur le jeu original, et figées dans
+ * `docs/provenance.md`. Ce sont les seuls faits observables dont on dispose ;
+ * tout le reste en est dérivé.
  *
  * ⚠ Note de calibration — pourquoi ces valeurs et pas celles de l'ancien fichier
  *
- * `legacy/src/constants.ts` documentait ces mêmes temps de traversée, puis
+ * L'ancien `constants.ts` documentait ces mêmes temps de traversée, puis
  * exportait des vitesses environ 2,7× plus lentes (68 px/s pour l'obus au lieu
  * de 184, 39 px/s pour le tank au lieu de 105), sous le commentaire « ajusté
  * empiriquement ».
@@ -165,7 +165,7 @@ export const TUNING: Tuning = {
     // Environ un demi-tour en un tiers de seconde : le corps s'oriente vite
     // sans donner l'impression de pivoter instantanément.
     turnRateRadiansPerSecond: Math.PI * 3,
-    // 5, et non le 4 que fixait `legacy/src/game.ts` : cette valeur-là était un
+    // 5, et non le 4 que fixait l'ancienne version : cette valeur-là était un
     // choix d'implémentation, pas un relevé. Confirmé sur le jeu original.
     maxActiveShells: 5,
     // Confirmé sur le jeu original, contrairement au reste de la section `mine`.

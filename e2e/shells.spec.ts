@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { waitForGame } from './helpers';
+
 // La déclaration de `window.__tanks` vit dans src/client/debug-bridge.ts.
 import '../src/client/debug-bridge';
 
@@ -99,7 +101,7 @@ async function aimAt(page: Page, fractionX: number, fractionY: number): Promise<
 
 test('le clic tire un obus, qui se déplace', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   await watchShells(page);
   expect((await readProbe(page)).samples).toHaveLength(0);
@@ -123,7 +125,7 @@ test('le clic tire un obus, qui se déplace', async ({ page }) => {
 
 test('le quota d\'obus simultanés est respecté', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   // Lu depuis la table de réglages vivante plutôt que recopié : le panneau de
   // calibration (#10) pourra changer cette valeur sans casser le test.
@@ -147,7 +149,7 @@ test('le quota d\'obus simultanés est respecté', async ({ page }) => {
 
 test('un obus ricoche au lieu de traverser le mur', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   // Visée strictement verticale, calculée depuis la position réelle du tank.
   //

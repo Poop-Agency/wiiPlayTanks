@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { waitForGame } from './helpers';
+
 // La déclaration de `window.__tanks` vit dans src/client/debug-bridge.ts.
 import '../src/client/debug-bridge';
 
@@ -37,7 +39,7 @@ async function setKnob(page: Page, label: string, value: number): Promise<void> 
 
 test('la touche ~ ouvre et referme le panneau', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForFunction(() => window.__tanks !== undefined);
+  await waitForGame(page);
 
   // Fermé au démarrage : le panneau ne doit pas s'imposer à qui veut jouer.
   await expect(page.locator(PANEL)).toBeHidden();
@@ -49,7 +51,7 @@ test('la touche ~ ouvre et referme le panneau', async ({ page }) => {
 
 test('un curseur modifie la simulation en direct', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForFunction(() => window.__tanks !== undefined);
+  await waitForGame(page);
   await openPanel(page);
 
   const before = await page.evaluate(() => window.__tanks!.tuning.tank.speedTilesPerSecond);
@@ -67,7 +69,7 @@ test('un curseur modifie la simulation en direct', async ({ page }) => {
 
 test('le tank ralentit réellement après le réglage', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForFunction(() => window.__tanks !== undefined);
+  await waitForGame(page);
 
   /** Distance parcourue vers la droite en une seconde de temps réel. */
   const runRight = async (): Promise<number> => {
@@ -95,7 +97,7 @@ test('le tank ralentit réellement après le réglage', async ({ page }) => {
 
 test('l\'export reprend les mesures et les valeurs courantes', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForFunction(() => window.__tanks !== undefined);
+  await waitForGame(page);
   await openPanel(page);
 
   await setKnob(page, 'Mèche', 5);
@@ -119,7 +121,7 @@ test('l\'export reprend les mesures et les valeurs courantes', async ({ page }) 
 
 test('changer de couleur remplace la section de profil', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForFunction(() => window.__tanks !== undefined);
+  await waitForGame(page);
   await openPanel(page);
 
   await expect(page.getByRole('heading', { name: 'Profil — brown' })).toBeVisible();
@@ -140,7 +142,7 @@ test('les calques de débogage se dessinent sans erreur', async ({ page }) => {
   page.on('pageerror', (error) => errors.push(error.message));
 
   await page.goto('/?bac=1&calme=1');
-  await page.waitForFunction(() => window.__tanks !== undefined);
+  await waitForGame(page);
   await openPanel(page);
 
   for (const option of ['hitboxes', 'trajectories', 'blastRadii']) {

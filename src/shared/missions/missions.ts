@@ -4,8 +4,8 @@
  * ─── Ce que l'ancienne version contenait réellement ──────────────────────────
  *
  * Le plan de refonte annonçait « les 20 missions réellement remplies » côté
- * dépôt distant. La conversion (`scripts/convert-legacy-levels.ts`) montre que
- * ce n'était pas le cas. Relevé exact :
+ * dépôt distant. La conversion des données, figée dans `docs/provenance.md`,
+ * montre que ce n'était pas le cas. Relevé exact :
  *
  *   · missions 1 et 2  → un vrai tracé (10 et 24 blocs posés) ;
  *   · missions 3 à 5   → aucun bloc, aucun départ joueur, ennemis en pixels ;
@@ -81,7 +81,7 @@ export const MISSIONS: readonly Mission[] = [
   {
     id: 1,
     name: 'Champ de tir',
-    // Porté depuis `legacy/src/level.ts` : deux colonnes, celle de droite
+    // Porté depuis l'ancienne version : deux colonnes, celle de droite
     // fermée par deux blocs cassables. Seule adaptation, le recentrage sur
     // l'arène commune — l'original de l'ancienne version faisait 25 × 12.
     grid: `
@@ -109,7 +109,7 @@ export const MISSIONS: readonly Mission[] = [
   {
     id: 2,
     name: 'Deux barrages',
-    // Porté depuis `legacy/src/level.ts`. Le départ joueur y était déclaré en
+    // Porté depuis l'ancienne version. Le départ joueur y était déclaré en
     // `y: 23` pour une arène de 17 blocs de haut : jamais atteignable, jamais
     // remarqué. Il est ramené en bas à gauche, ce que la position d'origine
     // cherchait manifestement à exprimer.
