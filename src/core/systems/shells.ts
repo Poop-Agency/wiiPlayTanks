@@ -62,7 +62,7 @@ export function fireShell(world: World, tank: Tank): Shell | null {
   // L'obus naît au bout du canon. Si ce point tombe dans un mur — canon collé
   // contre un bloc — on le fait naître au centre du tank : le faire apparaître
   // à l'intérieur du mur donnerait un rebond dans une direction arbitraire.
-  const muzzle = TUNING.tank.sizeTiles * 0.55;
+  const muzzle = TUNING.tank.sizeTiles * TUNING.shell.muzzleOffsetFactor;
   const half = TUNING.shell.radiusTiles;
   let x = tank.x + dirX * muzzle;
   let y = tank.y + dirY * muzzle;

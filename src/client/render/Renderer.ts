@@ -10,7 +10,8 @@
  * peut pas, même par accident, modifier l'état simulé.
  */
 
-import type { Grid } from '@core/state';
+import type { Grid, World } from '@core/state';
+import type { DebugOptions } from '../ui/tuning-panel';
 import type { RenderSnapshot } from './snapshots';
 
 export interface Renderer {
@@ -28,6 +29,18 @@ export interface Renderer {
 
   /** Dessine une frame. */
   draw(grid: Grid, view: RenderSnapshot): void;
+
+  /**
+   * Superpose les calques de débogage demandés par le panneau de calibration.
+   *
+   * Seule méthode à recevoir le `World` plutôt qu'un instantané, et c'est
+   * assumé : ces calques servent à vérifier ce que la simulation fait
+   * réellement. Une boîte de collision interpolée, décalée d'une fraction de
+   * pas par rapport à celle qui décide des impacts, ne prouverait rien.
+   *
+   * Elle ne lit jamais que l'état — la règle « le rendu ne modifie rien » tient.
+   */
+  drawDebug(world: World, options: Readonly<DebugOptions>): void;
 
   /**
    * Convertit des coordonnées de pointeur (repère de la fenêtre) en coordonnées

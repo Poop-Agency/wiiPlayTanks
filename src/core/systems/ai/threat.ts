@@ -10,15 +10,20 @@ import { TUNING } from '../../tuning.js';
 import type { Shell, Tank } from '../../state.js';
 
 /**
- * Anticipation de l'esquive, en secondes.
+ * Largeur du couloir considéré comme menaçant, en tuiles.
  *
- * Un obus qui arrivera dans plus d'une seconde ne mérite pas encore de
- * réaction : le tank aurait le temps de se décaler puis de revenir dedans.
+ * Dérivée de la taille du tank plutôt que réglable à part : un obus est
+ * menaçant s'il passe dans l'emprise du châssis, pas à une distance arbitraire.
+ * L'anticipation, elle, se règle — voir `TUNING.ai.evasionHorizonSeconds`.
+ *
+ * Une fonction et non une constante de module : `const X = TUNING.…` fige la
+ * valeur au chargement, et le panneau de calibration aurait beau modifier la
+ * taille du châssis, ce couloir-ci serait resté à sa valeur de départ. Un test
+ * de garde interdit désormais cette forme.
  */
-const REACTION_HORIZON_SECONDS = 1;
-
-/** Largeur du couloir considéré comme menaçant, en tuiles. */
-const THREAT_CORRIDOR_TILES = TUNING.tank.sizeTiles;
+function threatCorridorTiles(): number {
+  return TUNING.tank.sizeTiles;
+}
 
 /** Direction dans laquelle s'écarter, ou `null` si rien ne menace. */
 export interface EvasionVector {
@@ -55,11 +60,11 @@ export function findEvasion(tank: Tank, shells: readonly Shell[]): EvasionVector
     // Derrière l'obus, ou trop loin devant pour être une menace immédiate.
     if (along <= 0) continue;
     const timeToReach = along / speed;
-    if (timeToReach > REACTION_HORIZON_SECONDS || timeToReach >= closestTime) continue;
+    if (timeToReach > TUNING.ai.evasionHorizonSeconds || timeToReach >= closestTime) continue;
 
     // Écart latéral : l'obus passe-t-il assez près pour toucher ?
     const lateral = toTankX * -dirY + toTankY * dirX;
-    if (Math.abs(lateral) > THREAT_CORRIDOR_TILES) continue;
+    if (Math.abs(lateral) > threatCorridorTiles()) continue;
 
     closestTime = timeToReach;
     // On s'écarte perpendiculairement, du côté où l'on est déjà. Fuir dans
