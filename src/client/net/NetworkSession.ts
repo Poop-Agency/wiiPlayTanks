@@ -146,6 +146,20 @@ export class NetworkSession implements Session {
       .filter((player) => player.playerId !== this.#playerId)
       .map((player) => (player.connected ? player.name : `${player.name} (hors ligne)`));
 
+    // Tant qu'aucun instantané n'est arrivé, `this.world` est un monde d'attente
+    // sans le moindre tank. `missionOutcome` y lirait « aucun joueur vivant » et
+    // afficherait un bandeau d'échec avant même que la connexion se termine —
+    // un faux « TANK DÉTRUIT » au chargement, systématique en co-op. Le vrai
+    // jugement n'a de sens qu'une fois qu'un premier monde réel est arrivé.
+    if (!this.#reconciler.world) {
+      return {
+        ...buildCampaignView(this.#campaign, this.#placeholder, undefined, teammates),
+        missionName: this.#connected ? 'Connexion à la partie…' : 'Connexion au serveur…',
+        outcome: 'playing',
+        playerAlive: true,
+      };
+    }
+
     return buildCampaignView(this.#campaign, this.world, this.playerTank, teammates);
   }
 

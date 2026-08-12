@@ -45,6 +45,33 @@ async function playerTanks(page: Page) {
 let counter = 0;
 const uniqueRoom = (): string => `e2e-${Date.now()}-${counter++}`;
 
+test('la connexion n\'affiche jamais un faux bandeau d\'échec', async ({ browser }) => {
+  // Régression : tant qu'aucun instantané n'est encore arrivé, le monde local
+  // est un monde d'attente sans le moindre tank. `missionOutcome` y lisait
+  // « aucun joueur vivant » et affichait « TANK DÉTRUIT » avant même que la
+  // connexion se termine — systématique au premier chargement d'un client co-op.
+  const room = uniqueRoom();
+  const page = await browser.newPage();
+
+  await page.goto(`${SERVER}/?enligne=1&salon=${room}&nom=Alpha`);
+
+  // Fenêtre d'observation courte, volontairement avant que la connexion soit
+  // établie : c'est exactement l'instant où le faux bandeau apparaissait.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const outcome = await page.evaluate(() => window.__tanks?.campaign?.outcome);
+    expect(outcome).not.toBe('failed');
+    if (outcome !== undefined) break;
+    await page.waitForTimeout(20);
+  }
+
+  await page.waitForFunction(() => (window.__tanks?.campaign?.enemiesLeft ?? 0) > 0, undefined, {
+    timeout: 15_000,
+  });
+  expect(await page.evaluate(() => window.__tanks!.campaign!.outcome)).toBe('playing');
+
+  await page.close();
+});
+
 test('deux joueurs partagent la même partie', async ({ browser }) => {
   const room = uniqueRoom();
   const alpha = await browser.newPage();
