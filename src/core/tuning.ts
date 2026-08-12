@@ -74,8 +74,14 @@ export const REFERENCE_MEASUREMENTS = {
 /** Forme de la table de réglages. Mutable : le panneau de #10 l'édite en direct. */
 export interface Tuning {
   tank: {
-    /** Côté de la boîte de collision, en tuiles. */
-    readonly sizeTiles: number;
+    /**
+     * Côté de la boîte de collision, en tuiles.
+     *
+     * Modifiable comme le reste : le panneau de calibration l'expose, parce que
+     * la largeur du châssis décide si un tank passe ou non dans un couloir
+     * d'une tuile — ce qui se ressent immédiatement en jeu.
+     */
+    sizeTiles: number;
     /** Vitesse de déplacement de référence (le joueur), en tuiles/seconde. */
     speedTilesPerSecond: number;
     /** Vitesse de rotation du corps vers la direction visée, en radians/seconde. */
@@ -94,6 +100,13 @@ export interface Tuning {
     fastSpeedTilesPerSecond: number;
     /** Délai minimal entre deux tirs du joueur, en secondes. */
     cooldownSeconds: number;
+    /**
+     * Distance du canon au centre du tank, en fraction de la taille du tank.
+     *
+     * Détermine où naît l'obus. Trop court, il apparaît dans le châssis ; trop
+     * long, il franchit les murs minces au moment du tir.
+     */
+    muzzleOffsetFactor: number;
   };
   mine: {
     /** Durée de la mèche avant détonation, en secondes. */
@@ -106,6 +119,33 @@ export interface Tuning {
     cooldownSeconds: number;
     /** Rayon de collision d'une mine, en tuiles. Sert aux impacts d'obus. */
     radiusTiles: number;
+  };
+  /**
+   * Réglages communs à tous les tanks de l'IA.
+   *
+   * Ce qui distingue une couleur d'une autre vit dans `systems/ai/profiles.ts`.
+   * Ce qui suit s'applique à toutes, et se ressent en jeu — d'où sa présence
+   * ici plutôt qu'en constante enfouie dans `brain.ts`.
+   */
+  ai: {
+    /**
+     * Écart de visée en deçà duquel un tank se juge aligné et tire, en radians.
+     *
+     * Trop serré, la tourelle oscille sans jamais déclencher ; trop large, les
+     * obus partent manifestement à côté.
+     */
+    aimToleranceRadians: number;
+    /** Durée minimale d'une direction de patrouille, en secondes. */
+    roamMinSeconds: number;
+    /** Durée maximale d'une direction de patrouille, en secondes. */
+    roamMaxSeconds: number;
+    /**
+     * Horizon d'anticipation pour l'esquive, en secondes.
+     *
+     * Un obus qui atteindra le tank au-delà de ce délai est ignoré : réagir
+     * trop tôt donnerait des tanks qui fuient des projectiles encore lointains.
+     */
+    evasionHorizonSeconds: number;
   };
 }
 
@@ -136,6 +176,7 @@ export const TUNING: Tuning = {
     normalSpeedTilesPerSecond: speedFromCrossing(SHELL_CROSSING_SECONDS),
     fastSpeedTilesPerSecond: speedFromCrossing(SHELL_CROSSING_SECONDS) * 2,
     cooldownSeconds: 0.2,
+    muzzleOffsetFactor: 0.55,
   },
   // ⚠ SECTION NON MESURÉE — en attente de relevé sur le jeu original.
   //
@@ -157,5 +198,11 @@ export const TUNING: Tuning = {
     blastDurationSeconds: 0.35,
     cooldownSeconds: 0.5,
     radiusTiles: 0.35,
+  },
+  ai: {
+    aimToleranceRadians: 0.08,
+    roamMinSeconds: 0.5,
+    roamMaxSeconds: 2,
+    evasionHorizonSeconds: 1,
   },
 };

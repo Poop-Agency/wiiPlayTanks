@@ -12,6 +12,8 @@
  *   ?mission=N         la campagne, à partir de la mission N
  *   ?bac=1             le terrain d'essai des tests bout-en-bout
  *   ?bac=1&calme=1     le même, sans ennemis
+ *
+ * La touche `~` ouvre le panneau de calibration, dans tous les modes.
  */
 
 import { TICK_RATE } from '@core/tick';
@@ -26,6 +28,7 @@ import { startGameLoop } from './loop';
 import { BOARD_BOTTOM_BAND_PX, Canvas2DRenderer } from './render/canvas2d/Canvas2DRenderer';
 import type { Session } from './session';
 import { drawHud } from './ui/hud';
+import { TuningPanel } from './ui/tuning-panel';
 
 /**
  * Récupère le canevas.
@@ -118,7 +121,7 @@ function drawDiagnostics(ctx: CanvasRenderingContext2D): void {
 
   ctx.fillStyle = '#b9a98c';
   ctx.textAlign = 'left';
-  ctx.fillText('ZQSD · souris viser · clic tirer · clic droit miner', 14, middle);
+  ctx.fillText('ZQSD · souris viser · clic tirer · clic droit miner · ~ réglages', 14, middle);
 
   // À droite, et volontairement court : les deux textes partagent une bande de
   // la largeur du plateau, et se chevauchaient dès que l'un des deux s'allongeait.
@@ -133,6 +136,17 @@ function drawDiagnostics(ctx: CanvasRenderingContext2D): void {
 
 const overlayCtx = canvas.getContext('2d');
 
+const panel = new TuningPanel();
+
+/**
+ * Coût moyen d'un pas de simulation, lissé.
+ *
+ * Mesuré ici et non dans `core/` : `performance.now()` y est proscrit, et à
+ * juste titre — une simulation qui lirait l'horloge ne serait plus déterministe.
+ */
+const SMOOTHING = 0.1;
+let msPerTick = 0;
+
 const bridge: TanksDebugBridge = { world: session.world, rates, tuning: TUNING };
 exposeDebugBridge(bridge);
 
@@ -145,13 +159,26 @@ startGameLoop({
     const tank = session.playerTank;
     if (tank) sampler.setAimOrigin(tank.x, tank.y);
 
+    const startedMs = performance.now();
     session.update(sampler.sample());
+    msPerTick += (performance.now() - startedMs - msPerTick) * SMOOTHING;
 
     // La campagne remplace son monde à chaque mission : la passerelle doit
     // suivre, sinon les tests bout-en-bout observeraient la mission précédente.
     bridge.world = session.world;
     const status = session.status();
     if (status) bridge.campaign = status;
+
+    const world = session.world;
+    panel.update({
+      tick: world.tick,
+      tanks: world.tanks.filter((each) => each.alive).length,
+      shells: world.shells.length,
+      mines: world.mines.length,
+      msPerTick,
+      ticksPerSecond: rates.ticksPerSecond,
+      framesPerSecond: rates.framesPerSecond,
+    });
   },
 
   render(alpha): void {
@@ -159,6 +186,7 @@ startGameLoop({
     sampleRates(performance.now());
 
     renderer.draw(session.world.grid, session.view(alpha));
+    renderer.drawDebug(session.world, panel.debug);
 
     if (overlayCtx) {
       const status = session.status();

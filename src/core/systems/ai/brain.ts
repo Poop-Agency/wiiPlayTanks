@@ -33,8 +33,6 @@ import type { TankProfile } from './profiles.js';
  */
 const AIM_PERIOD_TICKS = 12;
 
-/** Écart de visée toléré avant de tirer, en radians. */
-const AIM_TOLERANCE_RADIANS = 0.08;
 
 /** État d'IA neutre, attribué à tout tank non piloté par un joueur. */
 export function createAiState(): TankAiState {
@@ -130,7 +128,13 @@ function updateRoaming(world: World, tank: Tank, ai: TankAiState): void {
   }
 
   ai.roamAngle = nextRange(world.rng, 0, Math.PI * 2);
-  ai.roamTicks = Math.round(nextRange(world.rng, 30, 120));
+  ai.roamTicks = Math.round(
+    nextRange(
+      world.rng,
+      secondsToTicks(TUNING.ai.roamMinSeconds),
+      secondsToTicks(TUNING.ai.roamMaxSeconds),
+    ),
+  );
 }
 
 /** Construit l'intention d'un tank de l'IA pour ce pas. */
@@ -166,7 +170,8 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   // ── Tir ──
   // On ne tire qu'une fois la tourelle effectivement alignée : sinon l'obus
   // partirait dans la direction où le canon se trouve, pas où il vise.
-  const aligned = Math.abs(normalizeAngle(aim - tank.turretAngle)) <= AIM_TOLERANCE_RADIANS;
+  const aligned =
+    Math.abs(normalizeAngle(aim - tank.turretAngle)) <= TUNING.ai.aimToleranceRadians;
   const fire = ai.solutionAngle !== null && aligned && ai.fireCooldownTicks === 0;
 
   if (fire) {

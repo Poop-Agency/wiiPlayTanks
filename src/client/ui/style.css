@@ -34,3 +34,147 @@ canvas {
   /* Rendu net : le jeu est dessiné en pixels logiques, sans lissage parasite. */
   image-rendering: pixelated;
 }
+
+/* ─── Panneau de calibration (touche ~) ───────────────────────────────────
+ *
+ * Ancré à droite et scrollable : il compte une quarantaine de curseurs, et il
+ * doit rester utilisable sur une fenêtre courte sans repousser le plateau.
+ * `position: fixed` le sort du `place-items: center` du corps de page.
+ */
+
+.tuning-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+
+  width: min(360px, 100vw);
+  padding: 12px 14px 24px;
+  overflow-y: auto;
+
+  background: #1b1510;
+  border-left: 1px solid #3a2e22;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tuning-panel[hidden] {
+  display: none;
+}
+
+.tuning-panel h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tuning-panel h3 {
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #3a2e22;
+  font-size: 12px;
+  color: #e8c98a;
+}
+
+.tuning-stats {
+  margin: 0;
+  padding: 6px 8px;
+  background: #241c14;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  /* Les deux lignes de chiffres arrivent séparées par un \n. */
+  white-space: pre-line;
+}
+
+.tuning-note {
+  margin: 0 0 6px;
+  color: #9c8b70;
+  font-size: 11px;
+}
+
+/* Le libellé occupe sa propre ligne, le curseur et la valeur la suivante.
+ * Tout sur une seule ligne, les noms un peu longs se faisaient tronquer — et
+ * un réglage dont on ne lit pas le nom ne sert à rien. */
+.tuning-knob {
+  display: grid;
+  grid-template-columns: 1fr 76px;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 7px 0;
+}
+
+.tuning-knob-name {
+  grid-column: 1 / -1;
+}
+
+.tuning-knob-value {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  text-align: right;
+  color: #e8dcc0;
+}
+
+.tuning-knob input[type='range'] {
+  width: 100%;
+  accent-color: #4a90d9;
+}
+
+.tuning-toggle,
+.tuning-profile-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.tuning-profile-picker {
+  margin-top: 16px;
+}
+
+.tuning-profile-picker select {
+  flex: 1;
+  background: #241c14;
+  color: var(--ink);
+  border: 1px solid #3a2e22;
+  border-radius: 3px;
+  padding: 3px 4px;
+  font: inherit;
+}
+
+.tuning-panel button {
+  margin-bottom: 6px;
+  padding: 4px 12px;
+  background: #3a2e22;
+  color: var(--ink);
+  border: 1px solid #564534;
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tuning-panel button:hover {
+  background: #4a3b2c;
+}
+
+.tuning-export {
+  width: 100%;
+  height: 160px;
+  background: #120e0a;
+  color: #9c8b70;
+  border: 1px solid #3a2e22;
+  border-radius: 3px;
+  padding: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  resize: vertical;
+}
+
+/* Le plateau est centré par la grille du corps de page : une marge à droite
+ * suffit à le décaler quand le panneau s'ouvre, sans toucher au canevas. */
+body.panneau-ouvert {
+  padding-right: min(360px, 100vw);
+}

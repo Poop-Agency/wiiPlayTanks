@@ -16,6 +16,16 @@ import type { Grid } from './state.js';
  * Hors de la grille, on répond « incassable » : le monde est clos, et cette
  * convention évite d'avoir à tester les bornes partout ailleurs.
  */
+/**
+ * Plafond d'itérations du lancer de rayon, en multiples du demi-périmètre.
+ *
+ * Paramètre de méthode, non de gameplay : une traversée en diagonale coûte au
+ * plus `largeur + hauteur` pas, et le facteur laisse la marge nécessaire aux
+ * directions rasantes. Il n'existe que pour qu'une direction dégénérée ne
+ * boucle pas indéfiniment.
+ */
+const RAY_STEP_BUDGET_FACTOR = 4;
+
 export function tileAt(grid: Grid, tileX: number, tileY: number): TileKind {
   if (tileX < 0 || tileY < 0 || tileX >= grid.width || tileY >= grid.height) {
     return TileKind.Indestructible;
@@ -392,7 +402,7 @@ export function raycastGrid(
       : (dirY > 0 ? tileY + 1 - originY : originY - tileY) * spanY;
 
   // Garde-fou : une direction non normalisée ou dégénérée ne doit pas boucler.
-  const maxSteps = 4 * (grid.width + grid.height);
+  const maxSteps = RAY_STEP_BUDGET_FACTOR * (grid.width + grid.height);
 
   for (let step = 0; step < maxSteps; step++) {
     let distance: number;

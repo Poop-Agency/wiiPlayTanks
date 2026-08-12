@@ -7,10 +7,12 @@
  */
 
 import { TileKind } from '@core/state';
-import type { Grid } from '@core/state';
+import type { Grid, World } from '@core/state';
 import { TILE_SIZE_PX, TUNING } from '@core/tuning';
 import { tileAt } from '@core/grid';
 import { BLAST, BLOCKS, BOARD, SHELL, TANK_COLORS, darken, lighten } from '../palette';
+import type { DebugOptions } from '../../ui/tuning-panel';
+import { drawDebugOverlay } from './debug-overlay';
 import type { Renderer } from '../Renderer';
 import type {
   ExplosionView,
@@ -128,6 +130,23 @@ export class Canvas2DRenderer implements Renderer {
       this.#drawExplosion(explosion);
     }
 
+    this.#ctx.restore();
+  }
+
+  /**
+   * Superpose les calques de débogage.
+   *
+   * Méthode distincte de `draw`, et prenant le `World` et non un instantané :
+   * ces calques servent à vérifier ce que la simulation fait réellement, donc
+   * ils lisent la source. La transformation du plateau est réappliquée ici,
+   * puisqu'elle appartient au renderer.
+   */
+  drawDebug(world: World, options: Readonly<DebugOptions>): void {
+    if (!options.hitboxes && !options.trajectories && !options.blastRadii) return;
+
+    this.#ctx.save();
+    this.#ctx.translate(0, BOARD_TOP_BAND_PX);
+    drawDebugOverlay(this.#ctx, world, options);
     this.#ctx.restore();
   }
 
