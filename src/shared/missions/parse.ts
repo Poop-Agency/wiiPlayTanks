@@ -139,5 +139,5 @@ export function parseMission(source: string): ParsedMission {
     .sort(([left], [right]) => left - right)
     .map(([, spawn]) => spawn);
 
-  return { grid: { width, height, tiles }, playerSpawns, enemySpawns };
+  return { grid: { width, height, tiles, version: 0 }, playerSpawns, enemySpawns };
 }

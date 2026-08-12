@@ -102,6 +102,10 @@ export interface Tuning {
     blastRadiusTiles: number;
     /** Durée d'affichage de l'explosion, en secondes. */
     blastDurationSeconds: number;
+    /** Délai minimal entre deux poses, en secondes. */
+    cooldownSeconds: number;
+    /** Rayon de collision d'une mine, en tuiles. Sert aux impacts d'obus. */
+    radiusTiles: number;
   };
 }
 
@@ -132,7 +136,11 @@ export const TUNING: Tuning = {
   },
   mine: {
     fuseSeconds: 3,
+    // Deux tuiles : de quoi ouvrir un passage franc dans un mur cassable, ce
+    // qui est la raison d'être des mines dans le level design de l'original.
     blastRadiusTiles: 2,
     blastDurationSeconds: 0.35,
+    cooldownSeconds: 0.5,
+    radiusTiles: 0.35,
   },
 };

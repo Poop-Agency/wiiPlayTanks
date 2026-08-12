@@ -18,6 +18,18 @@ export type PointerToWorld = (clientX: number, clientY: number) => { x: number; 
 
 export class InputSampler {
   readonly #active = new Set<GameAction>();
+
+  /**
+   * Actions pressées depuis le dernier échantillonnage, même déjà relâchées.
+   *
+   * La simulation n'échantillonne que soixante fois par seconde. Sans ce
+   * verrouillage, un appui bref — un clic dure une dizaine de millisecondes —
+   * pourrait commencer et finir entre deux pas, et disparaître purement et
+   * simplement. Un tir ou une mine perdus sans raison visible sont exactement
+   * le genre de chose qui rend un jeu frustrant.
+   */
+  readonly #pressedSinceSample = new Set<GameAction>();
+
   readonly #target: HTMLElement;
   readonly #pointerToWorld: PointerToWorld;
   readonly #disposers: Array<() => void> = [];
@@ -47,24 +59,39 @@ export class InputSampler {
     this.#originY = y;
   }
 
-  /** Construit l'intention correspondant à l'état courant des entrées. */
+  /**
+   * Construit l'intention correspondant aux entrées depuis le dernier appel.
+   *
+   * Consomme le verrou d'appuis brefs : chaque pression est donc rapportée
+   * exactement une fois au minimum, même si elle a été relâchée entre-temps.
+   */
   sample(): InputCommand {
+    const held = (action: GameAction): boolean =>
+      this.#active.has(action) || this.#pressedSinceSample.has(action);
+
+    // Les directions ne sont pas verrouillées : un déplacement est un état
+    // maintenu, pas un évènement. Le verrouiller ferait avancer le tank d'un
+    // pas fantôme après le relâchement.
     const moveX = (this.#active.has('right') ? 1 : 0) - (this.#active.has('left') ? 1 : 0);
     const moveY = (this.#active.has('down') ? 1 : 0) - (this.#active.has('up') ? 1 : 0);
 
-    return {
+    const command: InputCommand = {
       moveX,
       moveY,
       aim: Math.atan2(this.#aimY - this.#originY, this.#aimX - this.#originX),
-      fire: this.#active.has('fire'),
-      mine: this.#active.has('mine'),
+      fire: held('fire'),
+      mine: held('mine'),
     };
+
+    this.#pressedSinceSample.clear();
+    return command;
   }
 
   dispose(): void {
     for (const dispose of this.#disposers) dispose();
     this.#disposers.length = 0;
     this.#active.clear();
+    this.#pressedSinceSample.clear();
   }
 
   /* ── Câblage ─────────────────────────────────────────────────────────── */
@@ -75,7 +102,7 @@ export class InputSampler {
       if (!action) return;
       // Sinon la barre d'espace ferait défiler la page sous le jeu.
       event.preventDefault();
-      this.#active.add(action);
+      this.#press(action);
     });
 
     this.#listen(window, 'keyup', (event) => {
@@ -96,7 +123,7 @@ export class InputSampler {
 
     this.#listen(this.#target, 'pointerdown', (event) => {
       const action = MOUSE_BINDINGS[(event as PointerEvent).button];
-      if (action) this.#active.add(action);
+      if (action) this.#press(action);
     });
 
     // Sur `window` et non sur la cible : un bouton relâché en dehors du canevas
@@ -108,6 +135,12 @@ export class InputSampler {
 
     // Le clic droit sert à poser une mine : pas de menu contextuel.
     this.#listen(this.#target, 'contextmenu', (event) => event.preventDefault());
+  }
+
+  /** Enregistre une pression : état maintenu, et verrou pour l'échantillon à venir. */
+  #press(action: GameAction): void {
+    this.#active.add(action);
+    this.#pressedSinceSample.add(action);
   }
 
   #listen(target: EventTarget, type: string, handler: (event: Event) => void): void {

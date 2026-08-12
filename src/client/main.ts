@@ -68,11 +68,13 @@ function sampleRates(nowMs: number): void {
 function drawOverlay(ctx: CanvasRenderingContext2D): void {
   const tank = game.playerTank;
   const shells = tank ? `${tank.activeShells}/${TUNING.tank.maxActiveShells}` : '—';
+  const mines = tank ? `${tank.activeMines}/${TUNING.tank.maxActiveMines}` : '—';
+  const status = tank?.alive === false ? '  — DÉTRUIT' : '';
 
   const lines = [
     `pas/s ${rates.ticksPerSecond} (attendu ${TICK_RATE})   frames/s ${rates.framesPerSecond}`,
-    `obus en vol ${shells}`,
-    'ZQSD / WASD / flèches — souris pour viser, clic pour tirer',
+    `obus ${shells}   mines ${mines}${status}`,
+    'ZQSD / WASD / flèches — souris pour viser, clic gauche tirer, clic droit miner',
   ];
 
   // En bas de l'image : le bandeau ne doit pas masquer le terrain de jeu.

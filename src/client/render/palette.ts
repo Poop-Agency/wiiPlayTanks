@@ -48,6 +48,19 @@ export const SHELL = {
   fastTip: '#e8623a',
 };
 
+/** Mines et explosions. */
+export const BLAST = {
+  mineBody: '#4a4038',
+  mineRim: '#241e19',
+  /** Voyant au repos, puis à l'approche de la détonation. */
+  mineLightIdle: '#8a5a2a',
+  mineLightUrgent: '#ff5a2a',
+  /** Coeur puis bord de la boule de feu. */
+  fireCore: '#fff2c4',
+  fireEdge: '#e0561f',
+  smoke: 'rgba(60, 45, 35, 0.35)',
+};
+
 /** Couleur principale de chaque type de tank. */
 export const TANK_COLORS: Record<TankColor, string> = {
   player: '#4a90d9',

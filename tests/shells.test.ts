@@ -7,27 +7,15 @@ import { TICK_RATE, tick } from '../src/core/tick.js';
 import type { TickInputs } from '../src/core/tick.js';
 import { fireShell, shellSpeed } from '../src/core/systems/shells.js';
 import { REFERENCE_MEASUREMENTS, TILE_SIZE_PX, TUNING } from '../src/core/tuning.js';
-import { allocateEntityId, createWorld, hashWorld } from '../src/core/world.js';
+import { allocateEntityId, createTank, createWorld, hashWorld } from '../src/core/world.js';
 
 function openWorld(width = 40, height = 30): World {
   return createWorld({ width, height, seed: 1 });
 }
 
 function addTank(world: World, x: number, y: number, turretAngle = 0): Tank {
-  const tank: Tank = {
-    id: allocateEntityId(world),
-    color: 'player',
-    playerId: null,
-    x,
-    y,
-    bodyAngle: 0,
-    turretAngle,
-    alive: true,
-    activeShells: 0,
-    activeMines: 0,
-    reloadTicks: 0,
-  };
-  world.tanks.push(tank);
+  const tank = createTank(world, { color: 'player', x, y, angle: turretAngle });
+  tank.bodyAngle = 0;
   return tank;
 }
 

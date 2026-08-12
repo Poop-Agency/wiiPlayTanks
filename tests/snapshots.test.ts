@@ -4,7 +4,7 @@ import { normalizeAngle } from '../src/core/math.js';
 import { captureSnapshot, interpolateSnapshots } from '../src/client/render/snapshots.js';
 import type { RenderSnapshot } from '../src/client/render/snapshots.js';
 import type { World } from '../src/core/state.js';
-import { allocateEntityId, createWorld } from '../src/core/world.js';
+import { createTank, createWorld } from '../src/core/world.js';
 
 /**
  * L'interpolation existe parce que la simulation avance à 60 Hz alors que
@@ -14,19 +14,9 @@ import { allocateEntityId, createWorld } from '../src/core/world.js';
 
 function worldWithTank(x: number, y: number, angles = { body: 0, turret: 0 }): World {
   const world = createWorld({ width: 10, height: 10, seed: 1 });
-  world.tanks.push({
-    id: allocateEntityId(world),
-    color: 'player',
-    playerId: 'p1',
-    x,
-    y,
-    bodyAngle: angles.body,
-    turretAngle: angles.turret,
-    alive: true,
-    activeShells: 0,
-    activeMines: 0,
-    reloadTicks: 0,
-  });
+  const tank = createTank(world, { color: 'player', playerId: 'p1', x, y });
+  tank.bodyAngle = angles.body;
+  tank.turretAngle = angles.turret;
   return world;
 }
 
@@ -87,7 +77,7 @@ describe('interpolation', () => {
   test('une entité qui vient d\'apparaître est prise telle quelle', () => {
     // La faire glisser depuis une position d'origine inventée produirait un
     // fantôme traversant l'écran au moment du spawn.
-    const empty: RenderSnapshot = { tick: 0, tanks: [], shells: [] };
+    const empty: RenderSnapshot = { tick: 0, tanks: [], shells: [], mines: [], explosions: [] };
     const view = interpolateSnapshots(empty, current, 0.5).tanks[0]!;
 
     expect(view.x).toBe(4);
