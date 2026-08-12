@@ -151,8 +151,12 @@ export class Effects {
   #detect(view: RenderSnapshot): void {
     const before = this.#previous;
 
+    // Tous les tanks marquent le sol, y compris les invisibles : des chenilles
+    // creusent le terrain, que le châssis se voie ou non. Pour un tank blanc,
+    // cette trace est même le seul indice de sa position — et la seule façon
+    // de le combattre autrement qu'au hasard.
     for (const tank of view.tanks) {
-      if (tank.alive && tank.visible) this.#layTrack(tank);
+      if (tank.alive) this.#layTrack(tank);
     }
 
     if (!before) return;

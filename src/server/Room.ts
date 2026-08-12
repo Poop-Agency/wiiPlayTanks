@@ -18,13 +18,13 @@
  * réseau, et c'est comme ça que le test de convergence l'exerce.
  */
 
-import type { EntityId, InputCommand } from '@core/state';
+import type { EntityId, Grid, InputCommand } from '@core/state';
 import { NEUTRAL_INPUT } from '@core/state';
 import { TANK_PROFILES } from '@core/systems/ai/profiles';
 import { TICK_RATE, secondsToTicks } from '@core/tick';
 import { TUNING } from '@core/tuning';
 import { CampaignRunner } from '@shared/CampaignRunner';
-import { SNAPSHOT_RATE, stripTiles } from '@shared/protocol';
+import { MAX_PLAYERS_PER_ROOM, SNAPSHOT_RATE, stripTiles } from '@shared/protocol';
 import type {
   InputMessage,
   LobbyPlayer,
@@ -90,8 +90,21 @@ export class Room {
   /** Pas écoulés depuis la création. Sert d'horloge à la salle. */
   #tick = 0;
 
-  /** Version de terrain déjà envoyée à chaque joueur, pour ne la diffuser qu'au changement. */
-  readonly #terrainVersionSent = new Map<string, number>();
+  /**
+   * Terrain déjà envoyé à chaque joueur, pour ne le diffuser qu'au changement.
+   *
+   * On retient la **grille elle-même** en plus de son numéro de version : le
+   * numéro seul ne distingue pas deux missions consécutives, qui commencent
+   * toutes deux à zéro. Un joueur qui franchit une mission sans détruire un
+   * seul bloc resterait alors sur l'ancien terrain — il verrait des murs que
+   * le serveur n'a plus, et les obus les traverseraient.
+   *
+   * Les deux comparaisons couvrent deux évènements distincts : l'identité
+   * change au chargement d'une mission, la version à la destruction d'un bloc
+   * (qui mute la grille en place). Le rendu se protège déjà de la même façon,
+   * voir `Canvas2DRenderer`.
+   */
+  readonly #terrainSent = new Map<string, { grid: Grid; version: number }>();
 
   constructor(name: string) {
     this.name = name;
@@ -125,6 +138,18 @@ export class Room {
   join(playerId: string, name: string): Outgoing[] {
     const existing = this.#players.get(playerId);
 
+    // Un siège se garde à la reconnexion (`existing`), mais un salon plein
+    // refuse un nouveau venu : au-delà, `PLAYER_SEAT_COLORS` n'a plus de
+    // couleur à donner, et les points de départ dérivés n'ont plus de place.
+    if (!existing && this.#players.size >= MAX_PLAYERS_PER_ROOM) {
+      return [
+        {
+          to: playerId,
+          message: { t: 'bye', reason: `Salon complet (${MAX_PLAYERS_PER_ROOM} joueurs maximum).` },
+        },
+      ];
+    }
+
     if (existing) {
       existing.connected = true;
       existing.disconnectedAtTick = null;
@@ -145,7 +170,7 @@ export class Room {
     }
 
     // Le terrain devra être renvoyé : le client n'en a aucun.
-    this.#terrainVersionSent.delete(playerId);
+    this.#terrainSent.delete(playerId);
 
     const messages: Outgoing[] = [
       {
@@ -181,7 +206,14 @@ export class Room {
     return [this.#lobbyMessage()];
   }
 
-  /** Démarre la partie. Sans effet si elle a déjà commencé. */
+  /**
+   * Démarre la partie. Sans effet si elle a déjà commencé.
+   *
+   * `MIN_PLAYERS_TO_START` n'est pas imposé ici : c'est une recommandation du
+   * salon, pas une règle du serveur. Un salon d'un seul joueur reste un co-op
+   * valide — c'est ce qui permet de tester une partie en ligne seul, et c'est
+   * exactement ce sur quoi repose l'isolation entre salons (voir les tests).
+   */
   start(): Outgoing[] {
     if (this.#started) return [];
 
@@ -261,7 +293,7 @@ export class Room {
       if (this.#tick - player.disconnectedAtTick < grace) continue;
 
       this.#players.delete(player.playerId);
-      this.#terrainVersionSent.delete(player.playerId);
+      this.#terrainSent.delete(player.playerId);
       // L'IA et les autres joueurs ne s'en aperçoivent pas : seul le tank part.
       runner.removePlayer(player.playerId);
     }
@@ -286,11 +318,13 @@ export class Room {
     for (const player of this.#players.values()) {
       if (!player.connected) continue;
 
-      // Le terrain ne repart qu'au changement de version : c'est de loin le
-      // plus gros objet de l'état, et il ne bouge qu'à la destruction d'un bloc
-      // ou au changement de mission.
-      if (this.#terrainVersionSent.get(player.playerId) !== world.grid.version) {
-        this.#terrainVersionSent.set(player.playerId, world.grid.version);
+      // Le terrain ne repart qu'au changement : c'est de loin le plus gros
+      // objet de l'état, et il ne bouge qu'à la destruction d'un bloc ou au
+      // changement de mission. Voir `#terrainSent` pour le détail des deux
+      // comparaisons.
+      const sent = this.#terrainSent.get(player.playerId);
+      if (sent?.grid !== world.grid || sent.version !== world.grid.version) {
+        this.#terrainSent.set(player.playerId, { grid: world.grid, version: world.grid.version });
         const terrain: TerrainMessage = { t: 'terrain', grid: world.grid };
         messages.push({ to: player.playerId, message: terrain });
       }
@@ -305,6 +339,7 @@ export class Room {
         gridVersion: world.grid.version,
         world: partial,
         campaign: runner.campaign,
+        phase: runner.phase,
       };
 
       messages.push({ to: player.playerId, message: snapshot });

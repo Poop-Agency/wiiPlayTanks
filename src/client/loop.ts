@@ -23,6 +23,27 @@ export interface RunningGameLoop {
 }
 
 /**
+ * Cadence d'affichage visée, en images par seconde.
+ *
+ * La simulation tourne à 60 Hz quoi qu'il arrive ; au-delà, les images
+ * supplémentaires ne montrent rien de plus que de l'interpolation entre deux
+ * pas déjà calculés. Sur un écran à 144 Hz, c'était deux images sur trois de
+ * travail — dessin du plateau, des tanks, du HUD — pour un gain nul, et
+ * autant de budget en moins quand une frame devient coûteuse.
+ */
+const TARGET_FPS = 60;
+const TARGET_FRAME_SECONDS = 1 / TARGET_FPS;
+
+/**
+ * Marge de tolérance sur le seuil, en secondes.
+ *
+ * Un écran à 60 Hz ne livre jamais exactement 16,667 ms : sans marge, une
+ * image sur deux tomberait juste sous le seuil et l'affichage s'effondrerait
+ * à 30 Hz — l'inverse exact de ce qu'on cherche.
+ */
+const FRAME_TOLERANCE_SECONDS = 0.002;
+
+/**
  * Démarre la boucle sur `requestAnimationFrame`.
  *
  * Seule cette fonction connaît le navigateur ; toute la logique de cadencement
@@ -34,6 +55,9 @@ export function startGameLoop(handlers: GameLoopHandlers): RunningGameLoop {
   let frameHandle = 0;
   let running = true;
 
+  /** Temps écoulé depuis la dernière image dessinée, en secondes. */
+  let sinceRenderSeconds = 0;
+
   const frame = (nowMs: number): void => {
     if (!running) return;
 
@@ -42,12 +66,31 @@ export function startGameLoop(handlers: GameLoopHandlers): RunningGameLoop {
     const elapsedSeconds = previousMs === null ? 0 : (nowMs - previousMs) / 1000;
     previousMs = nowMs;
 
+    // La simulation, elle, n'est jamais sautée : c'est `FixedTimestep` qui
+    // décide du nombre de pas, et il consomme le temps réel intégralement.
     const ticks = timestep.advance(elapsedSeconds);
     for (let i = 0; i < ticks; i++) {
       handlers.update();
     }
 
-    handlers.render(timestep.alpha);
+    sinceRenderSeconds += elapsedSeconds;
+
+    if (sinceRenderSeconds + FRAME_TOLERANCE_SECONDS >= TARGET_FRAME_SECONDS) {
+      // On retranche la période au lieu de remettre à zéro : sur un écran dont
+      // la fréquence n'est pas un multiple de 60 — 144 Hz, soit 2,4 images par
+      // image visée — le reste conservé fait alterner les intervalles de 2 et
+      // 3 images, ce qui donne bien 60 en moyenne. Une remise à zéro
+      // arrondirait à 3 et plafonnerait à 48.
+      sinceRenderSeconds -= TARGET_FRAME_SECONDS;
+
+      // Écran plus lent que la cadence visée, ou frame coûteuse : le reste
+      // n'a plus de sens et s'accumulerait en dérive. On dessine chaque image
+      // disponible, ce qui est déjà le mieux possible.
+      if (sinceRenderSeconds > TARGET_FRAME_SECONDS) sinceRenderSeconds = 0;
+
+      handlers.render(timestep.alpha);
+    }
+
     frameHandle = requestAnimationFrame(frame);
   };
 

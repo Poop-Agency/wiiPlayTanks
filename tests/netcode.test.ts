@@ -41,12 +41,29 @@ function snapshotsFor(outgoing: Outgoing[], playerId: string): SnapshotMessage[]
     .map((entry) => entry.message as SnapshotMessage);
 }
 
-/** Ouvre une salle avec les joueurs donnés, partie démarrée. */
+/**
+ * Ouvre une salle avec les joueurs donnés, partie démarrée **et lancée**.
+ *
+ * Une mission commence par son annonce, pendant laquelle la simulation est
+ * figée. Ces tests-ci portent sur le réseau, pas sur la transition : on la
+ * traverse une fois pour toutes ici.
+ */
 function openRoom(...playerIds: string[]): Room {
   const room = new Room('essai');
   for (const playerId of playerIds) room.join(playerId, playerId);
   room.start();
+  skipTransitions(room);
   return room;
+}
+
+/** Fait tourner la salle jusqu'à ce que la simulation reparte. */
+function skipTransitions(room: Room, limit = 600): void {
+  for (let step = 0; step < limit; step++) {
+    const before = room.world?.tick ?? 0;
+    room.step();
+    if ((room.world?.tick ?? 0) > before) return;
+  }
+  throw new Error('la simulation n\'a jamais repris');
 }
 
 /**
@@ -257,6 +274,41 @@ describe('diffusion', () => {
 
     const second = room.broadcast();
     expect(second.filter((entry) => entry.message.t === 'terrain')).toHaveLength(0);
+  });
+
+  test('le changement de mission renvoie le terrain, à numéro de version égal', () => {
+    // Une mission franchie sans détruire un seul bloc garde sa grille en
+    // version 0 — et la mission suivante s'ouvre elle aussi en version 0.
+    // Comparer les numéros seuls conclut « rien n'a changé » et laisse le
+    // client sur le terrain de la mission précédente : il voit des murs
+    // absents du serveur, et les obus les traversent.
+    const room = openRoom('a');
+    room.broadcast();
+
+    const before = room.world!.grid;
+    const beforeTiles = [...before.tiles];
+    expect(before.version).toBe(0);
+
+    for (const tank of room.world!.tanks) {
+      if (tank.playerId === null) tank.alive = false;
+    }
+    // Fin de manche puis annonce du round suivant : deux transitions à
+    // traverser avant que la mission 2 ne soit réellement en place.
+    for (let index = 0; index < 400; index++) room.step();
+
+    expect(room.world!.grid).not.toBe(before);
+    expect(room.world!.grid.version).toBe(before.version);
+
+    const terrain = room
+      .broadcast()
+      .filter((entry) => entry.message.t === 'terrain')
+      .map((entry) => entry.message as { grid: { tiles: TileKind[] } });
+
+    expect(terrain).toHaveLength(1);
+    // Et ce qui repart est bien le nouveau terrain : renvoyer l'ancien
+    // satisferait le compte de messages sans corriger quoi que ce soit.
+    expect(terrain[0]!.grid.tiles).toEqual(room.world!.grid.tiles);
+    expect(terrain[0]!.grid.tiles).not.toEqual(beforeTiles);
   });
 
   test('chaque joueur reçoit son propre accusé et son propre tank', () => {
@@ -546,5 +598,30 @@ describe('lobby', () => {
   test('un message de type inconnu est simplement ignoré', () => {
     const message = decode<ServerMessage>(encode({ t: 'bye', reason: 'test' }));
     expect(message?.t).toBe('bye');
+  });
+
+  test('un cinquième joueur est refusé, le salon plafonne à quatre', () => {
+    const room = new Room('salon');
+    for (const playerId of ['a', 'b', 'c', 'd']) room.join(playerId, playerId);
+
+    const outgoing = room.join('e', 'e');
+
+    const bye = outgoing.find((entry) => entry.message.t === 'bye');
+    expect(bye?.to).toBe('e');
+    expect((bye?.message as { reason: string }).reason).toContain('complet');
+    // Le refus ne doit rien changer pour les quatre déjà installés.
+    expect(
+      (room.join('a', 'a').find((entry) => entry.message.t === 'lobby')!.message as {
+        players: unknown[];
+      }).players,
+    ).toHaveLength(4);
+  });
+
+  test('un siège déjà occupé se reprend même un salon plein', () => {
+    const room = new Room('salon');
+    for (const playerId of ['a', 'b', 'c', 'd']) room.join(playerId, playerId);
+
+    const outgoing = room.join('a', 'Aurélien de retour');
+    expect(outgoing.some((entry) => entry.message.t === 'bye')).toBe(false);
   });
 });

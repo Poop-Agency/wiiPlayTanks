@@ -99,27 +99,32 @@ const STANDARD_RANGE = pixelsToTiles(267);
 /** Portée étendue, relevée pour les tanks qui repèrent de loin. */
 const LONG_RANGE = pixelsToTiles(400);
 
+/**
+ * Le joueur. Sa tourelle suit le pointeur sans inertie — d'où une vitesse de
+ * rotation infinie, qui court-circuite le limiteur appliqué aux autres.
+ *
+ * Partagé par `player`, `player2`, `player3` et `player4` : ces alias ne
+ * distinguent qu'une couleur d'affichage, jamais un comportement.
+ */
+const TANK_PROFILES_PLAYER: TankProfile = {
+  speedMultiplier: 1,
+  turretRateRadiansPerSecond: Number.POSITIVE_INFINITY,
+  maxActiveShells: 5,
+  shellKind: 'normal',
+  shellBounces: 1,
+  maxActiveMines: 2,
+  fireIntervalSeconds: 0,
+  fireIntervalJitterSeconds: 0,
+  aimErrorRadians: 0,
+  detectionRangeTiles: Number.POSITIVE_INFINITY,
+  plannedBounces: 0,
+  movement: 'hold',
+  preferredRangeTiles: 0,
+  invisible: false,
+};
+
 export const TANK_PROFILES: Record<TankColor, TankProfile> = {
-  /**
-   * Le joueur. Sa tourelle suit le pointeur sans inertie — d'où une vitesse de
-   * rotation infinie, qui court-circuite le limiteur appliqué aux autres.
-   */
-  player: {
-    speedMultiplier: 1,
-    turretRateRadiansPerSecond: Number.POSITIVE_INFINITY,
-    maxActiveShells: 5,
-    shellKind: 'normal',
-    shellBounces: 1,
-    maxActiveMines: 2,
-    fireIntervalSeconds: 0,
-    fireIntervalJitterSeconds: 0,
-    aimErrorRadians: 0,
-    detectionRangeTiles: Number.POSITIVE_INFINITY,
-    plannedBounces: 0,
-    movement: 'hold',
-    preferredRangeTiles: 0,
-    invisible: false,
-  },
+  player: TANK_PROFILES_PLAYER,
 
   /** Brun : immobile, lent à viser, tire rarement. La cible d'entraînement. */
   brown: {
@@ -286,6 +291,14 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     preferredRangeTiles: 3,
     invisible: false,
   },
+
+  // Alias de `player` : même comportement, seule la couleur affichée diffère
+  // (voir la remarque sur `TankColor` dans core/state.ts). Placés après les
+  // couleurs d'IA pour ne pas décaler l'ordre de `Object.keys`, dont le
+  // panneau de réglage se sert pour choisir son profil affiché par défaut.
+  player2: TANK_PROFILES_PLAYER,
+  player3: TANK_PROFILES_PLAYER,
+  player4: TANK_PROFILES_PLAYER,
 };
 
 /** Profil d'une couleur donnée. */

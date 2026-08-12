@@ -19,8 +19,26 @@ import type { MissionOutcome } from '@core/systems/mission';
 import { TUNING } from '@core/tuning';
 import { CAMPAIGN_LENGTH } from '@shared/campaign';
 import type { CampaignState, CampaignStatus } from '@shared/campaign';
+import type { CampaignPhase } from '@shared/CampaignRunner';
 import { missionByNumber } from '@shared/missions/missions';
+import type { LobbyPlayer } from '@shared/protocol';
 import type { RenderSnapshot } from './render/snapshots';
+
+/**
+ * Salon d'attente, avant que la partie ne démarre.
+ *
+ * N'existe qu'en co-op : la campagne solo n'a personne à attendre. Présent sur
+ * `CampaignView` tant que le serveur n'a pas démarré la partie — le HUD s'en
+ * sert pour dessiner l'écran de salon à la place du bandeau de mission.
+ */
+export interface LobbyView {
+  room: string;
+  players: LobbyPlayer[];
+  minPlayers: number;
+  maxPlayers: number;
+  /** Raison d'un refus de connexion (salon plein, version incompatible…), le cas échéant. */
+  error: string | null;
+}
 
 /**
  * Tout ce que le HUD a besoin de savoir.
@@ -49,6 +67,17 @@ export interface CampaignView {
 
   /** Coéquipiers connectés, en co-op. Vide en solo. */
   teammates: string[];
+
+  /** Présent tant que la partie n'a pas démarré ; absent sinon (et toujours en solo). */
+  lobby?: LobbyView;
+
+  /**
+   * Où en est le cycle de mission.
+   *
+   * `ending` et `briefing` figent la simulation : le rendu s'en sert pour
+   * choisir entre le bandeau d'issue et l'annonce du round à venir.
+   */
+  phase: CampaignPhase;
 }
 
 /**
@@ -64,6 +93,7 @@ export function buildCampaignView(
   world: World,
   tank: Tank | undefined,
   teammates: string[] = [],
+  phase: CampaignPhase = 'playing',
 ): CampaignView {
   const mission = missionByNumber(state.mission);
 
@@ -86,6 +116,7 @@ export function buildCampaignView(
     playerAlive: tank?.alive ?? false,
 
     teammates,
+    phase,
   };
 }
 

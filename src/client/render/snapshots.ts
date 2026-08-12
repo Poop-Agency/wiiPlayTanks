@@ -28,11 +28,15 @@ export interface TankView {
   turretAngle: number;
   alive: boolean;
   /**
-   * Le tank est-il visible ?
+   * Le tank est-il dessiné ?
    *
-   * Faux pour un tank blanc au repos. Il se révèle brièvement en tirant, ce qui
-   * laisse au joueur une chance de le localiser — sans quoi il serait
-   * impossible à combattre autrement qu'au hasard.
+   * Faux pour un tank blanc, **en toute circonstance**. Une version précédente
+   * le révélait le temps de son rechargement, pour laisser une chance de le
+   * localiser ; ça se voyait comme un clignotement, et c'était de toute façon
+   * devenu inutile — tous les tanks laissent désormais des traces au sol, y
+   * compris les invisibles, et ce sont elles qui trahissent leur position.
+   *
+   * Un tank invisible reste simulé et touchable : seul son dessin disparaît.
    */
   visible: boolean;
 }
@@ -106,7 +110,7 @@ export function captureSnapshot(world: World): RenderSnapshot {
       alive: tank.alive,
       // Le rechargement en cours signale un tir tout juste parti : c'est la
       // fenêtre pendant laquelle un tank invisible se trahit.
-      visible: !profileOf(tank.color).invisible || tank.reloadTicks > 0,
+      visible: !profileOf(tank.color).invisible,
     })),
     shells: world.shells.map((shell) => ({
       id: shell.id,

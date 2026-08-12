@@ -9,6 +9,7 @@ import {
   startCampaign,
 } from '../src/shared/campaign.js';
 import type { CampaignState } from '../src/shared/campaign.js';
+import { CampaignRunner } from '../src/shared/CampaignRunner.js';
 
 /**
  * La progression est un réducteur pur : c'est ce qui permettra au serveur (#13)
@@ -132,5 +133,114 @@ describe('invariants', () => {
     expect(earnsBonusTank(6)).toBe(false);
     // Rien à offrir pour la dernière : la campagne s'arrête juste après.
     expect(earnsBonusTank(CAMPAIGN_LENGTH)).toBe(false);
+  });
+});
+
+describe('cycle de mission', () => {
+  /** Fait avancer le runner jusqu'à ce que la condition tienne, ou échoue. */
+  function advanceUntil(runner: CampaignRunner, done: () => boolean, limit = 2000): void {
+    for (let step = 0; step < limit; step++) {
+      if (done()) return;
+      runner.step([]);
+    }
+    throw new Error('condition jamais atteinte');
+  }
+
+  /**
+   * Runner prêt à jouer, annonce d'ouverture passée.
+   *
+   * Une partie commence par le briefing de sa première mission : sans le
+   * traverser, un test qui attend « la phase briefing » se satisferait de
+   * celle du départ au lieu de celle qui suit la victoire.
+   */
+  function startedRunner(): CampaignRunner {
+    const runner = new CampaignRunner({ playerIds: ['a'] });
+    advanceUntil(runner, () => runner.phase === 'playing');
+    return runner;
+  }
+
+  test('une partie s\'ouvre sur l\'annonce de sa première mission', () => {
+    const runner = new CampaignRunner({ playerIds: ['a'] });
+
+    expect(runner.phase).toBe('briefing');
+    expect(runner.campaign.mission).toBe(1);
+
+    // Rien ne bouge tant que l'annonce dure : on ne tombe pas dans l'arène.
+    const tickAvant = runner.world.tick;
+    runner.step([]);
+    expect(runner.world.tick).toBe(tickAvant);
+
+    advanceUntil(runner, () => runner.phase === 'playing');
+    runner.step([]);
+    expect(runner.world.tick).toBeGreaterThan(tickAvant);
+  });
+
+  test('reprendre en pleine campagne s\'annonce aussi', () => {
+    // Le cas qui motivait le correctif : démarrer à la mission 15 tombait
+    // directement dans une arène de trois tanks violets.
+    const runner = new CampaignRunner({ playerIds: ['a'], startingMission: 15 });
+    expect(runner.phase).toBe('briefing');
+    expect(runner.campaign.mission).toBe(15);
+  });
+
+  test('la simulation est figée dès qu\'une issue est prononcée', () => {
+    const runner = startedRunner();
+    for (const tank of runner.world.tanks) {
+      if (tank.playerId === null) tank.alive = false;
+    }
+
+    runner.step([]);
+    expect(runner.phase).toBe('ending');
+
+    // Plus rien ne doit bouger : c'est ce qui empêche un obus encore en vol de
+    // tuer le joueur après sa victoire.
+    const tickAvant = runner.world.tick;
+    runner.step([]);
+    runner.step([]);
+    expect(runner.world.tick).toBe(tickAvant);
+  });
+
+  test('mourir après avoir gagné ne fait pas rejouer la mission', () => {
+    // Le défaut d'origine : le monde tournait pendant le temps mort, et
+    // l'issue était relue à la fin. Un obus perdu transformait donc une
+    // victoire en échec, et renvoyait sur la mission qu'on venait de finir.
+    const runner = startedRunner();
+    for (const tank of runner.world.tanks) {
+      if (tank.playerId === null) tank.alive = false;
+    }
+
+    runner.step([]);
+    expect(runner.phase).toBe('ending');
+
+    // On tue le joueur pendant le temps mort, ce que le gel rend impossible en
+    // jeu mais qu'on force ici pour verrouiller le comportement.
+    for (const tank of runner.world.tanks) tank.alive = false;
+
+    advanceUntil(runner, () => runner.phase === 'briefing');
+    expect(runner.campaign.mission).toBe(2);
+    expect(runner.campaign.attempt).toBe(1);
+  });
+
+  test('le briefing charge la mission suivante mais la garde figée', () => {
+    const runner = startedRunner();
+    for (const tank of runner.world.tanks) {
+      if (tank.playerId === null) tank.alive = false;
+    }
+
+    advanceUntil(runner, () => runner.phase === 'briefing');
+
+    // La mission annoncée est bien celle qui va démarrer, et ses ennemis sont
+    // en place — c'est ce que l'écran d'annonce donne à lire.
+    expect(runner.campaign.mission).toBe(2);
+    expect(runner.world.tanks.some((tank) => tank.playerId === null)).toBe(true);
+
+    const tickAvant = runner.world.tick;
+    runner.step([]);
+    expect(runner.world.tick).toBe(tickAvant);
+
+    // Puis tout repart d'un coup.
+    advanceUntil(runner, () => runner.phase === 'playing');
+    runner.step([]);
+    expect(runner.world.tick).toBeGreaterThan(tickAvant);
   });
 });

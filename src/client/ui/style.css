@@ -307,3 +307,34 @@ body.panneau-ouvert {
   margin: 0;
   color: #9c8b70;
 }
+
+/*
+ * Bouton de retour à l'accueil.
+ *
+ * En DOM plutôt que peint dans le canevas, contrairement au HUD : c'est une
+ * cible cliquable, et le navigateur gère le survol, le focus clavier et
+ * l'accessibilité mieux qu'un rectangle dessiné dont il faudrait retrouver
+ * les coordonnées à chaque redimensionnement.
+ */
+.bouton-quitter {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 15;
+  padding: 6px 12px;
+  font: 12px ui-sans-serif, system-ui, sans-serif;
+  color: #b9a98c;
+  background: rgba(20, 14, 8, 0.72);
+  border: 1px solid #3a2e22;
+  border-radius: 4px;
+  cursor: pointer;
+  /* Discret tant qu'on joue : il ne doit pas tirer l'oeil pendant une partie. */
+  opacity: 0.45;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.bouton-quitter:hover,
+.bouton-quitter:focus-visible {
+  opacity: 1;
+  color: #f0e6d2;
+}

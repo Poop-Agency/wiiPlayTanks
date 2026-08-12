@@ -232,7 +232,7 @@ describe('les tables de réglage sont exploitables', () => {
     }
   });
 
-  test('les profils couvrent les dix couleurs', () => {
+  test('les profils couvrent les dix couleurs et les trois alias de joueur', () => {
     expect(Object.keys(TANK_PROFILES).sort()).toEqual(
       [
         'ash',
@@ -241,6 +241,9 @@ describe('les tables de réglage sont exploitables', () => {
         'green',
         'pink',
         'player',
+        'player2',
+        'player3',
+        'player4',
         'purple',
         'teal',
         'white',

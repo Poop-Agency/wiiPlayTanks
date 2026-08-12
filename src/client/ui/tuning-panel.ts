@@ -35,8 +35,15 @@ import { REFERENCE_MEASUREMENTS, TILE_SIZE_PX, TUNING } from '@core/tuning';
 import { globalGroups, profileGroup } from './knobs';
 import type { Knob, KnobGroup } from './knobs';
 
-/** Couleurs proposées dans le sélecteur de profil. */
-const PROFILE_COLORS = Object.keys(TANK_PROFILES) as TankColor[];
+/**
+ * Couleurs proposées dans le sélecteur de profil.
+ *
+ * `player2`, `player3` et `player4` partagent l'objet de `player` — les
+ * lister à part n'ajouterait que des doublons dans le menu.
+ */
+const PROFILE_COLORS = (Object.keys(TANK_PROFILES) as TankColor[]).filter(
+  (color) => color !== 'player2' && color !== 'player3' && color !== 'player4',
+);
 
 /** Chiffres vivants affichés en tête du panneau. */
 export interface PanelStats {

@@ -12,6 +12,7 @@
  * `dist/`, que ce serveur sert lui-même.
  */
 
+import { resolve } from 'node:path';
 import { PROTOCOL_VERSION, decode, encode } from '@shared/protocol';
 import type { ClientMessage } from '@shared/protocol';
 import { Room } from './Room';
@@ -78,9 +79,42 @@ const server = Bun.serve<SocketData>({
     // Fichiers statiques. Toute route inconnue rend `index.html` : le client
     // est une application d'une seule page.
     const path = url.pathname === '/' ? '/index.html' : url.pathname;
-    const file = Bun.file(STATIC_ROOT + path.replace(/^\//, ''));
+
+    // `pathname` est **encodé** : un fichier dont le nom porte une espace
+    // arrive en `%20`, et le chercher tel quel sur le disque échouerait. Les
+    // morceaux de musique en portent tous. Un nom indécodable est un client
+    // malformé, pas une raison d'interrompre le serveur.
+    let relative: string;
+    try {
+      relative = decodeURIComponent(path.replace(/^\//, ''));
+    } catch {
+      return new Response('Chemin invalide', { status: 400 });
+    }
+
+    // Le décodage peut faire apparaître des `..` qui n'étaient pas visibles
+    // avant : sans ce garde-fou, une requête pourrait remonter hors de `dist/`
+    // et lire n'importe quel fichier de la machine.
+    //
+    // `resolve` et non `new URL` : cette dernière ré-encoderait le chemin
+    // qu'on vient de décoder, et `Bun.file` chercherait alors un fichier dont
+    // le nom contient littéralement « %20 ».
+    const resolved = resolve(STATIC_ROOT, relative);
+    if (!resolved.startsWith(STATIC_ROOT)) {
+      return new Response('Chemin invalide', { status: 400 });
+    }
+
+    const file = Bun.file(resolved);
 
     if (await file.exists()) return new Response(file);
+
+    // Un chemin qui porte une extension désigne un fichier précis : répondre
+    // `index.html` à sa place le ferait passer pour présent, et l'erreur
+    // ressortirait bien plus loin — un lecteur audio qui reçoit du HTML dit
+    // seulement « format illisible ». Le client, lui, est une application
+    // d'une seule page : ses routes n'ont pas d'extension.
+    if (/\.[a-z0-9]+$/i.test(resolved)) {
+      return new Response('Fichier introuvable', { status: 404 });
+    }
 
     const index = Bun.file(`${STATIC_ROOT}index.html`);
     if (await index.exists()) return new Response(index);
@@ -113,11 +147,15 @@ const server = Bun.serve<SocketData>({
           }
 
           sockets.set(ws.data.playerId, ws);
-          dispatch(room, room.join(ws.data.playerId, message.name));
+          const outgoing = room.join(ws.data.playerId, message.name);
+          dispatch(room, outgoing);
 
-          // Le premier arrivant lance la partie : en co-op, attendre un signal
-          // explicite pour jouer seul n'apporterait rien.
-          if (!room.started) dispatch(room, room.start());
+          // Un salon plein a refusé ce joueur (`bye` ci-dessus) : la connexion
+          // n'a rien à faire de plus qu'être fermée.
+          if (outgoing.some((entry) => entry.message.t === 'bye')) {
+            sockets.delete(ws.data.playerId);
+            ws.close();
+          }
           break;
         }
 

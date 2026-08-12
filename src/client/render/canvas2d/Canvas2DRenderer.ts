@@ -6,7 +6,7 @@
  * reste est redessiné 60 à 240 fois par seconde.
  */
 
-import { TileKind } from '@core/state';
+import { TileKind, isPlayerColor } from '@core/state';
 import type { Grid, World } from '@core/state';
 import { TILE_SIZE_PX, TUNING } from '@core/tuning';
 import { tileAt } from '@core/grid';
@@ -362,6 +362,48 @@ export class Canvas2DRenderer implements Renderer {
     ctx.strokeStyle = darken(TANK_COLORS[tank.color], 0.8);
     ctx.lineWidth = 1;
     ctx.strokeRect(-half + 0.5, -half * 0.62 + 0.5, size - 1, size * 0.62 - 1);
+    ctx.restore();
+
+    this.#drawWreckCross(tank);
+  }
+
+  /**
+   * Croix posée sur une épave.
+   *
+   * Blanche pour un tank d'IA : savoir lequel des neuf est tombé n'apprend
+   * rien, seul compte qu'il ne tire plus. À la couleur du siège pour un
+   * joueur — en co-op c'est ce qui dit **qui** vient de tomber, et donc qui
+   * n'est plus là pour couvrir.
+   *
+   * Dessinée hors de la transformation de l'épave, qui l'écraserait et la
+   * ferait tourner avec le châssis : cette croix est une marque à lire, pas
+   * un morceau de la carcasse.
+   */
+  #drawWreckCross(tank: TankView): void {
+    const ctx = this.#ctx;
+    const reach = (TUNING.tank.sizeTiles * TILE_SIZE_PX) / 2 - 2;
+
+    ctx.save();
+    ctx.translate(tank.x * TILE_SIZE_PX, tank.y * TILE_SIZE_PX);
+
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-reach, -reach);
+    ctx.lineTo(reach, reach);
+    ctx.moveTo(reach, -reach);
+    ctx.lineTo(-reach, reach);
+
+    // Liseré sombre d'abord : une croix blanche se perdrait sur le plateau
+    // clair, et une croix de couleur sur la carcasse noircie de sa propre
+    // teinte. Ce contour la détache des deux.
+    ctx.strokeStyle = 'rgba(25, 16, 8, 0.55)';
+    ctx.lineWidth = 4.5;
+    ctx.stroke();
+
+    ctx.strokeStyle = isPlayerColor(tank.color) ? TANK_COLORS[tank.color] : '#f4f1ea';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
     ctx.restore();
   }
 

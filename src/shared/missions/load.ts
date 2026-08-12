@@ -8,6 +8,7 @@
  */
 
 import { blocksTank, tileAt } from '@core/grid';
+import { PLAYER_SEAT_COLORS } from '@core/state';
 import type { EntityId, Grid, World } from '@core/state';
 import { createTank, createWorld } from '@core/world';
 import type { Mission } from './missions';
@@ -140,7 +141,11 @@ export function loadMission(mission: Mission, options: LoadMissionOptions): Load
 
   const playerTankIds = playerIds.map((playerId, index) => {
     const spawn = playerSpawns[index]!;
-    return createTank(world, { color: 'player', playerId, x: spawn.x, y: spawn.y }).id;
+    // Une couleur par siège, dans l'ordre d'arrivée : c'est ce qui distingue
+    // les coéquipiers à l'écran en co-op. `PLAYER_SEAT_COLORS` ne couvre que
+    // 4 sièges, la limite du salon ([shared/protocol.ts](../protocol.ts)).
+    const color = PLAYER_SEAT_COLORS[index] ?? 'player';
+    return createTank(world, { color, playerId, x: spawn.x, y: spawn.y }).id;
   });
 
   // Les ennemis après les joueurs : l'ordre de création fixe les identifiants,

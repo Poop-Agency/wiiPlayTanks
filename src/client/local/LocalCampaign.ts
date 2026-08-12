@@ -64,6 +64,12 @@ export class LocalCampaign implements Session {
   }
 
   status(): CampaignView {
-    return buildCampaignView(this.#runner.campaign, this.#runner.world, this.playerTank);
+    return buildCampaignView(
+      this.#runner.campaign,
+      this.#runner.world,
+      this.playerTank,
+      [],
+      this.#runner.phase,
+    );
   }
 }

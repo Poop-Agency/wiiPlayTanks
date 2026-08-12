@@ -39,6 +39,16 @@ nom de salon, et jouez. Qui arrive ensuite rejoint la partie en cours.
 La manette est la transposition la plus proche de l'original, où le stick du
 nunchuk déplace le tank pendant que le pointeur de la Wiimote vise séparément.
 
+### Musique
+
+Les bruitages sont synthétisés à la volée, sans aucun fichier. La musique, elle,
+se charge depuis `public/musique/` : un MP3 par mission, nommé `01.mp3` à
+`20.mp3`. **Le dépôt n'en contient aucun** — une mission sans fichier se joue
+simplement en silence.
+
+Voir [`public/musique/README.md`](public/musique/README.md) pour le nommage, le
+comportement (boucle, fondu, volume) et la question des droits.
+
 ### Adresses utiles
 
 | URL | Mode |
@@ -48,6 +58,62 @@ nunchuk déplace le tank pendant que le pointeur de la Wiimote vise séparément
 | `/?enligne=1&salon=x&nom=y` | co-op |
 | `/?bac=1` | terrain d'essai (géométrie stable, pour les tests) |
 | `/?bac=1&calme=1` | le même, sans ennemis |
+| `/?enligne=1&serveur=wss://hôte/ws` | co-op sur un serveur donné, sans reconstruire |
+
+---
+
+## Héberger
+
+### Ce que le serveur exige
+
+Le serveur est **autoritaire** : il détient le seul monde qui fasse foi, exécute
+toute l'IA et avance à 60 Hz en permanence. Il lui faut donc un **processus qui
+vit**, et non des fonctions éphémères. Cela exclut l'hébergement *serverless*
+(Vercel, Netlify Functions) pour le co-op — pas par manque de configuration,
+mais parce que l'état partagé ne survivrait pas entre deux invocations isolées.
+
+Consommation mesurée, à titre de dimensionnement :
+
+| Situation | CPU | RAM |
+|---|---|---|
+| Aucun joueur | ~0 % | 60 Mo |
+| Partie en cours | ~0,5 cœur | 60 Mo |
+
+Le coût vient de la simulation, pas du nombre de joueurs : 2 ou 4 se valent. Un
+salon vidé est supprimé, d'où le repos à 0 %. Les offres gratuites plafonnées à
+0,1 CPU sont donc insuffisantes **en cours de partie** : le serveur prendrait du
+retard et le jeu se jouerait au ralenti.
+
+### Partager une partie depuis sa machine
+
+Le plus simple, et gratuit. Dans deux terminaux :
+
+```bash
+bun run coop      # construit et sert le jeu sur :3000
+bun run partage   # expose :3000 derrière une URL HTTPS publique
+```
+
+La seconde commande affiche une adresse en `.trycloudflare.com` : partagez-la,
+elle sert le jeu **et** le WebSocket. Rien à configurer, le client déduit
+l'adresse du serveur de l'origine qui l'a servi. Il faut
+[cloudflared](https://github.com/cloudflare/cloudflared/releases), et la machine
+doit rester allumée.
+
+### Séparer le client et le serveur
+
+Le solo ne demande aucun serveur : `dist/` suffit. On peut donc publier le
+client sur un hébergeur statique — il reste alors jouable en permanence, même
+serveur de jeu éteint — et ne faire tourner le serveur que pour le co-op.
+
+Dans ce cas le client ne peut plus déduire l'adresse du serveur de sa propre
+origine, qui n'a aucun `/ws`. Elle se fige à la construction :
+
+```bash
+VITE_GAME_SERVER=wss://mon-serveur/ws bun run build
+```
+
+Sans cette variable, le client se connecte à l'origine qui l'a servi — le
+comportement voulu quand le serveur de jeu sert lui-même les fichiers.
 
 ---
 

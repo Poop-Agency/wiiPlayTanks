@@ -30,9 +30,15 @@ import { DT, TICK_RATE } from '@core/tick';
 import { TUNING } from '@core/tuning';
 import { createWorld } from '@core/world';
 import type { CampaignState } from '@shared/campaign';
+import type { CampaignPhase } from '@shared/CampaignRunner';
 import { startCampaign } from '@shared/campaign';
 import { ARENA_HEIGHT_TILES, ARENA_WIDTH_TILES } from '@shared/missions/missions';
-import { INTERPOLATION_DELAY_SECONDS, withTiles } from '@shared/protocol';
+import {
+  INTERPOLATION_DELAY_SECONDS,
+  MAX_PLAYERS_PER_ROOM,
+  MIN_PLAYERS_TO_START,
+  withTiles,
+} from '@shared/protocol';
 import type { LobbyPlayer, ServerMessage } from '@shared/protocol';
 import { captureSnapshot, interpolateSnapshots } from '../render/snapshots';
 import type { RenderSnapshot } from '../render/snapshots';
@@ -89,8 +95,13 @@ export class NetworkSession implements Session {
   #clockStarted = false;
 
   #campaign: CampaignState = startCampaign();
+  #phase: CampaignPhase = 'playing';
   #players: LobbyPlayer[] = [];
   #started = false;
+  #room = '';
+
+  /** Raison d'un refus du serveur (salon plein…), affichée dans le salon d'attente. */
+  #byeReason: string | null = null;
 
   /** Numéro de la prochaine intention émise. */
   #seq = 0;
@@ -152,15 +163,31 @@ export class NetworkSession implements Session {
     // un faux « TANK DÉTRUIT » au chargement, systématique en co-op. Le vrai
     // jugement n'a de sens qu'une fois qu'un premier monde réel est arrivé.
     if (!this.#reconciler.world) {
-      return {
+      const base = {
         ...buildCampaignView(this.#campaign, this.#placeholder, undefined, teammates),
         missionName: this.#connected ? 'Connexion à la partie…' : 'Connexion au serveur…',
-        outcome: 'playing',
+        outcome: 'playing' as const,
         playerAlive: true,
+      };
+
+      // Le salon n'a de sens qu'une fois connecté et tant que la partie n'a
+      // pas démarré : avant ça il n'y a encore rien à choisir, après ça il
+      // n'y a plus rien à attendre.
+      if (!this.#connected || this.#started) return base;
+
+      return {
+        ...base,
+        lobby: {
+          room: this.#room,
+          players: this.#players,
+          minPlayers: MIN_PLAYERS_TO_START,
+          maxPlayers: MAX_PLAYERS_PER_ROOM,
+          error: this.#byeReason,
+        },
       };
     }
 
-    return buildCampaignView(this.#campaign, this.world, this.playerTank, teammates);
+    return buildCampaignView(this.#campaign, this.world, this.playerTank, teammates, this.#phase);
   }
 
   /** Demande le démarrage. Sans effet si la partie tourne déjà. */
@@ -175,7 +202,9 @@ export class NetworkSession implements Session {
     switch (message.t) {
       case 'welcome':
         this.#playerId = message.playerId;
+        this.#room = message.room;
         this.#connected = true;
+        this.#byeReason = null;
         // Le serveur fait autorité jusque sur les réglages : la prédiction doit
         // tourner sur exactement la même table, sinon elle dérive à chaque pas
         // et se fait corriger en permanence.
@@ -198,6 +227,7 @@ export class NetworkSession implements Session {
 
       case 'bye':
         this.#connected = false;
+        this.#byeReason = message.reason;
         this.#reconciler.reset();
         break;
     }
@@ -218,6 +248,7 @@ export class NetworkSession implements Session {
 
     this.#reconciler.reconcile(world, message.ack, message.yourTankId);
     this.#campaign = message.campaign;
+    this.#phase = message.phase;
 
     // Changement de mission : le monde repart de zéro, et interpoler d'une
     // arène à l'autre ferait glisser les tanks à travers l'écran.

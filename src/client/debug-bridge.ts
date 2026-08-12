@@ -41,6 +41,22 @@ export interface TanksDebugBridge {
   tuning: Tuning;
   /** État de la campagne. Absent en mode bac à sable. */
   campaign?: CampaignView;
+
+  /**
+   * Musique de fond.
+   *
+   * Exposée comme objet vivant et non comme copie : ses éléments audio ne sont
+   * pas dans le DOM, et une copie prise à chaque pas ne coûterait que des
+   * allocations pour une information lue une fois par test.
+   */
+  music?: {
+    readonly state: {
+      mission: number | null;
+      playing: boolean;
+      missing: string[];
+      lastJingle: 'cleared' | 'failed' | 'interlude' | null;
+    };
+  };
 }
 
 declare global {

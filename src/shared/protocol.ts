@@ -25,6 +25,7 @@ import type { TankProfile } from '@core/systems/ai/profiles';
 import type { TankColor } from '@core/state';
 import type { Tuning } from '@core/tuning';
 import type { CampaignState } from './campaign';
+import type { CampaignPhase } from './CampaignRunner';
 
 /** Version du protocole. Un client d'une autre version est refusé à la porte. */
 export const PROTOCOL_VERSION = 1;
@@ -40,6 +41,23 @@ export const SNAPSHOT_RATE = 20;
  * données et fige ; trop long, tout le monde joue dans le passé.
  */
 export const INTERPOLATION_DELAY_SECONDS = 0.1;
+
+/**
+ * Nombre de joueurs nécessaire pour démarrer une partie en salon.
+ *
+ * En dessous, ce n'est pas du co-op : un seul joueur passe par le mode
+ * `?mission=` (campagne solo, sans salon d'attente).
+ */
+export const MIN_PLAYERS_TO_START = 2;
+
+/**
+ * Sièges disponibles dans un salon.
+ *
+ * Borné par `PLAYER_SEAT_COLORS` (`@core/state`), qui n'a qu'une couleur par
+ * siège — et par les points de départ dérivés autour du spawn d'origine de
+ * chaque mission, qui ne garantissent une place propre qu'à ce nombre.
+ */
+export const MAX_PLAYERS_PER_ROOM = 4;
 
 /* ── Client → serveur ───────────────────────────────────────────────────── */
 
@@ -143,6 +161,14 @@ export interface SnapshotMessage {
   /** Le monde, sans les tuiles. */
   world: WorldWithoutTiles;
   campaign: CampaignState;
+  /**
+   * Où en est le cycle de mission.
+   *
+   * Les phases de transition figent la simulation côté serveur ; le client
+   * doit le savoir pour afficher l'écran correspondant plutôt que de croire à
+   * une partie immobile.
+   */
+  phase: CampaignPhase;
 }
 
 /** Le monde amputé des tuiles de terrain, qui voyagent séparément. */

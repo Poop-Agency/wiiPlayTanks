@@ -65,9 +65,17 @@ export interface Grid {
  *
  * Les caractéristiques associées vivent dans `systems/ai/profiles.ts` (#11) :
  * aucun `switch` sur la couleur ne doit apparaître dans la logique.
+ *
+ * `player2`, `player3` et `player4` partagent exactement le profil de
+ * `player` (même comportement, un seul joueur humain derrière chacun) : ils
+ * n'existent que pour distinguer les coéquipiers à l'écran en co-op, un par
+ * siège dans l'ordre d'arrivée (#13, #couleurs-coop).
  */
 export type TankColor =
   | 'player'
+  | 'player2'
+  | 'player3'
+  | 'player4'
   | 'brown'
   | 'ash'
   | 'teal'
@@ -77,6 +85,26 @@ export type TankColor =
   | 'purple'
   | 'white'
   | 'black';
+
+/**
+ * Couleur de chaque siège de joueur, dans l'ordre d'arrivée dans le salon.
+ *
+ * `shared/missions/load.ts` assigne les tanks de joueurs dans cet ordre ; le
+ * rendu client s'en sert pour prévisualiser la couleur d'un siège dès le
+ * salon d'attente, avant même qu'un tank n'existe.
+ */
+export const PLAYER_SEAT_COLORS: readonly TankColor[] = ['player', 'player2', 'player3', 'player4'];
+
+/**
+ * Ce tank est-il celui d'un joueur ?
+ *
+ * Se lit sur la seule couleur, et non sur `playerId` : c'est ce qui permet au
+ * rendu de trancher à partir d'un `TankView`, qui ne transporte pas
+ * l'identifiant du joueur.
+ */
+export function isPlayerColor(color: TankColor): boolean {
+  return PLAYER_SEAT_COLORS.includes(color);
+}
 
 /**
  * Mémoire d'un tank piloté par l'IA.

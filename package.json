@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test ./tests",
     "e2e": "playwright test",
-    "coop": "bun run build && bun run serve"
+    "coop": "bun run build && bun run serve",
+    "partage": "cloudflared tunnel --url http://localhost:3000"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",

@@ -16,6 +16,7 @@ import { exposeDebugBridge } from './debug-bridge';
 import type { RateProbe, TanksDebugBridge } from './debug-bridge';
 import { InputSampler } from './input/sampler';
 import { SoundDirector } from './audio/SoundDirector';
+import { Music } from './audio/music';
 import { Synth } from './audio/synth';
 import { LocalCampaign } from './local/LocalCampaign';
 import { createSandboxSession } from './local/sandbox';
@@ -23,7 +24,7 @@ import { startGameLoop } from './loop';
 import { Connection, stablePlayerId } from './net/connection';
 import { NetworkSession } from './net/NetworkSession';
 import { BOARD_BOTTOM_BAND_PX, Canvas2DRenderer } from './render/canvas2d/Canvas2DRenderer';
-import type { Session } from './session';
+import type { CampaignView, Session } from './session';
 import { Effects } from './render/effects';
 import { drawHud } from './ui/hud';
 import { TuningPanel } from './ui/tuning-panel';
@@ -55,17 +56,24 @@ const VITE_DEV_PORT = '5173';
 const GAME_SERVER_PORT = '3000';
 
 /**
- * Adresse du serveur de jeu.
+ * Adresse du serveur de jeu, par ordre de priorité décroissante.
  *
- * Deux situations. En développement, Vite sert la page et le serveur de jeu
- * tourne à côté : il faut donc changer de port. En production, le serveur de jeu
- * sert lui-même les fichiers, et l'hôte courant est le bon.
- *
- * `?serveur=` court-circuite la déduction, pour pointer une autre machine.
+ * 1. `?serveur=` — court-circuite tout, pour pointer une machine à la volée.
+ *    C'est ce qui permet d'essayer un serveur sans reconstruire le client.
+ * 2. `VITE_GAME_SERVER`, figée à la construction. Nécessaire dès que la page
+ *    et le jeu ne vivent plus au même endroit : un client servi par un
+ *    hébergeur statique (Vercel) n'a aucun `/ws` sur sa propre origine, et la
+ *    déduction ci-dessous le ferait se connecter à lui-même.
+ * 3. À défaut, l'origine courante — le cas normal quand le serveur de jeu
+ *    sert lui-même les fichiers. En développement, Vite sert la page et le
+ *    serveur tourne à côté : il faut alors changer de port.
  */
 function serverUrl(params: URLSearchParams): string {
   const explicit = params.get('serveur');
   if (explicit) return explicit;
+
+  const configured = import.meta.env['VITE_GAME_SERVER'];
+  if (configured) return configured;
 
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host =
@@ -132,7 +140,12 @@ export function boot(params: URLSearchParams): void {
     if (event.code !== 'Enter') return;
 
     const status = session.status();
-    if (status && status.status !== 'playing') session.restart();
+    if (!status) return;
+
+    // Dans le salon, `restart()` sert de déclencheur de départ (#13) : c'est
+    // le même message `t: 'start'` que la partie n'ait jamais commencé ou
+    // qu'elle reprenne après une issue de mission.
+    if (status.lobby || status.status !== 'playing') session.restart();
   });
 
   /** Diagnostic de cadence, affiché en surimpression. Sans effet sur la simulation. */
@@ -194,19 +207,74 @@ export function boot(params: URLSearchParams): void {
 
   const panel = new TuningPanel();
 
+  /**
+   * Retour à l'écran-titre.
+   *
+   * On navigue vers une URL sans paramètre plutôt que de démonter la session
+   * en place : c'est déjà la façon dont l'écran-titre lance un mode, et ça
+   * garantit qu'aucun état — connexion, boucle, contexte audio — ne survive
+   * d'une partie à l'autre. Quitter un salon revient donc simplement à fermer
+   * la page, ce que le serveur sait déjà traiter.
+   */
+  function goHome(): void {
+    window.location.href = window.location.pathname;
+  }
+
+  const quit = document.createElement('button');
+  quit.type = 'button';
+  quit.className = 'bouton-quitter';
+  quit.textContent = '← Accueil';
+  quit.title = 'Revenir à l’écran-titre (Échap)';
+  quit.addEventListener('click', goHome);
+  document.body.append(quit);
+
+  window.addEventListener('keydown', (event) => {
+    if (event.code !== 'Escape') return;
+    goHome();
+  });
+
   const effects = new Effects();
   const synth = new Synth();
   const sound = new SoundDirector(synth);
+  const music = new Music();
+
+  /**
+   * Phase de mission au pas précédent.
+   *
+   * Les jingles ponctuent une **bascule**, pas un état : sans cette mémoire,
+   * la fin de manche se rejouerait soixante fois par seconde pendant tout le
+   * temps mort. Remise à `null` au déblocage de l'audio, pour rattraper la
+   * bascule survenue avant le premier geste du joueur.
+   */
+  let previousPhase: CampaignView['phase'] | null = null;
+
+  music.setMuted(synth.muted);
+  music.setVolume(synth.settings.volume);
 
   // Les navigateurs refusent d'ouvrir un contexte audio sans geste préalable :
   // on l'ouvre au premier, quel qu'il soit.
   for (const type of ['pointerdown', 'keydown'] as const) {
-    window.addEventListener(type, () => synth.resume(), { once: true });
+    window.addEventListener(
+      type,
+      () => {
+        synth.resume();
+        music.unlock();
+        // Jusqu'ici le navigateur interdisait tout son : la phase en cours a
+        // donc basculé sans que sa bande-son parte. En oubliant la phase
+        // précédente, on force sa redétection au pas suivant — c'est ce qui
+        // fait entendre l'annonce d'ouverture, dont la bascule a lieu bien
+        // avant le premier geste du joueur.
+        previousPhase = null;
+      },
+      { once: true },
+    );
   }
 
   window.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyM') return;
-    synth.toggleMute();
+    // La musique suit le même interrupteur : couper le son et continuer
+    // d'entendre la mélodie n'aurait aucun sens.
+    music.setMuted(synth.toggleMute());
   });
 
   /** Instant de la frame précédente, pour faire vivre les effets en temps réel. */
@@ -221,7 +289,7 @@ export function boot(params: URLSearchParams): void {
   const SMOOTHING = 0.1;
   let msPerTick = 0;
 
-  const bridge: TanksDebugBridge = { world: session.world, rates, tuning: TUNING };
+  const bridge: TanksDebugBridge = { world: session.world, rates, tuning: TUNING, music };
   exposeDebugBridge(bridge);
 
   startGameLoop({
@@ -241,7 +309,32 @@ export function boot(params: URLSearchParams): void {
       // suivre, sinon les tests bout-en-bout observeraient la mission précédente.
       bridge.world = session.world;
       const status = session.status();
-      if (status) bridge.campaign = status;
+      if (status) {
+        bridge.campaign = status;
+
+        if (!status.lobby) {
+          // Chaque phase a sa bande-son, et elle se déclenche sur la
+          // **bascule** : comparée à la précédente, sinon le jingle repartirait
+          // soixante fois par seconde pendant toute la transition.
+          if (status.phase !== previousPhase) {
+            if (status.phase === 'ending') {
+              // La musique de mission s'arrête : elle couvrirait la ponctuation.
+              music.stop();
+              music.playJingle(status.outcome === 'cleared' ? 'cleared' : 'failed');
+            } else if (status.phase === 'briefing') {
+              // L'entre-deux accompagne l'annonce des ennemis à venir.
+              music.playJingle('interlude');
+            }
+            previousPhase = status.phase;
+          }
+
+          // La musique de mission ne démarre qu'avec la mission elle-même :
+          // pendant les transitions le monde est figé, et elle partirait avant
+          // que le joueur ne puisse bouger. `playForMission` compare avec la
+          // mission en cours, donc l'appeler à chaque pas ne relance rien.
+          if (status.phase === 'playing') music.playForMission(status.mission);
+        }
+      }
 
       const world = session.world;
       panel.update({

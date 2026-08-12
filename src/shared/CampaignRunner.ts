@@ -32,14 +32,33 @@ import { missionByNumber } from './missions/missions';
 /**
  * Temps mort après une mission réussie, en secondes.
  *
- * La simulation continue d'avancer pendant ce délai : l'explosion du dernier
- * ennemi doit se jouer entièrement, sinon la mission se coupe sur une image
- * figée et le coup gagnant n'est jamais vu.
+ * Le monde est **figé** pendant ce délai : plus un tank ne bouge, plus un obus
+ * n'avance. C'est ce que fait l'original, et c'est indispensable — sans ça, un
+ * obus encore en vol après la victoire pouvait tuer le joueur pendant le temps
+ * mort, et l'issue recalculée à la fin renvoyait alors sur la mission qu'on
+ * venait de gagner.
  */
-const CLEARED_PAUSE_SECONDS = 1.6;
+const CLEARED_PAUSE_SECONDS = 2;
 
-/** Temps mort après un échec. Un peu plus long : il y a une mauvaise nouvelle à lire. */
+/** Temps mort après un échec. Le monde y est figé de la même façon. */
 const FAILED_PAUSE_SECONDS = 2.2;
+
+/**
+ * Durée de l'annonce qui précède une mission, en secondes.
+ *
+ * La mission est déjà chargée mais reste figée : on montre les ennemis qui
+ * attendent, puis tout démarre d'un coup — le monde et sa musique ensemble.
+ */
+const BRIEFING_SECONDS = 3;
+
+/**
+ * Où en est le runner dans le cycle d'une mission.
+ *
+ * `ending` et `briefing` figent tous deux la simulation, mais ne montrent pas
+ * la même chose : le premier conclut la mission écoulée, le second annonce
+ * celle qui vient.
+ */
+export type CampaignPhase = 'playing' | 'ending' | 'briefing';
 
 export interface CampaignRunnerOptions {
   /** Joueurs présents au départ, dans l'ordre des sièges. */
@@ -64,10 +83,25 @@ export class CampaignRunner {
    */
   #pauseTicks = 0;
 
+  #phase: CampaignPhase = 'playing';
+
+  /**
+   * Issue retenue au moment où elle s'est produite.
+   *
+   * Elle est prononcée dès que la mission bascule, et non relue à la fin du
+   * temps mort : sans cette mémoire, tout changement survenu entretemps
+   * pourrait la contredire.
+   */
+  #decided: MissionOutcome | null = null;
+
   constructor({ playerIds, startingMission = 1 }: CampaignRunnerOptions) {
     this.#playerIds = [...playerIds];
     this.#state = startCampaign(startingMission);
     this.#world = this.#openMission();
+    // Une partie commence comme n'importe quel round : par son annonce. Tomber
+    // directement dans l'arène est brutal, et prive de l'information la plus
+    // utile — ce qui attend, surtout si l'on reprend en pleine campagne.
+    this.#beginBriefing();
   }
 
   get world(): World {
@@ -81,6 +115,11 @@ export class CampaignRunner {
   /** Issue de la mission en cours, recalculée à la demande. */
   get outcome(): MissionOutcome {
     return missionOutcome(this.#world);
+  }
+
+  /** Où en est le cycle de mission. Le rendu s'en sert pour choisir son écran. */
+  get phase(): CampaignPhase {
+    return this.#phase;
   }
 
   /** Joueurs installés, dans l'ordre des sièges. */
@@ -130,8 +169,9 @@ export class CampaignRunner {
   /** Recommence la campagne depuis la première mission. */
   restart(): void {
     this.#state = startCampaign();
-    this.#pauseTicks = 0;
+    this.#decided = null;
     this.#world = this.#openMission();
+    this.#beginBriefing();
   }
 
   /**
@@ -140,21 +180,34 @@ export class CampaignRunner {
    * @param inputs intentions des joueurs pour ce pas, par identifiant de tank
    */
   step(inputs: TickInputs): void {
-    tick(this.#world, inputs);
-
     // Campagne terminée : le monde continue de tourner en toile de fond, mais
     // plus aucune transition n'est déclenchée.
-    if (this.#state.status !== 'playing') return;
-
-    if (this.#pauseTicks > 0) {
-      this.#pauseTicks--;
-      if (this.#pauseTicks === 0) this.#resolve();
+    if (this.#state.status !== 'playing') {
+      tick(this.#world, inputs);
       return;
     }
+
+    // Les deux phases de transition figent la simulation. C'est tout le
+    // correctif : un obus en vol ne peut plus rien changer à une issue déjà
+    // prononcée.
+    if (this.#phase !== 'playing') {
+      this.#pauseTicks--;
+      if (this.#pauseTicks > 0) return;
+
+      if (this.#phase === 'ending') this.#resolve();
+      else this.#phase = 'playing';
+      return;
+    }
+
+    tick(this.#world, inputs);
 
     const outcome = missionOutcome(this.#world);
     if (outcome === 'playing') return;
 
+    // L'issue est **retenue** ici, au moment où elle se produit, et non
+    // relue à la fin du temps mort : c'est elle qui fait foi.
+    this.#decided = outcome;
+    this.#phase = 'ending';
     this.#pauseTicks = secondsToTicks(
       outcome === 'cleared' ? CLEARED_PAUSE_SECONDS : FAILED_PAUSE_SECONDS,
     );
@@ -176,8 +229,27 @@ export class CampaignRunner {
 
   /** Applique l'issue de la mission écoulée et ouvre la suivante s'il y en a une. */
   #resolve(): void {
-    this.#state = advanceCampaign(this.#state, missionOutcome(this.#world));
-    if (this.#state.status === 'playing') this.#world = this.#openMission();
+    // `#decided` et non `missionOutcome(this.#world)` : le monde a pu changer
+    // depuis, et c'est l'issue prononcée sur le moment qui compte.
+    this.#state = advanceCampaign(this.#state, this.#decided ?? missionOutcome(this.#world));
+    this.#decided = null;
+
+    if (this.#state.status !== 'playing') {
+      this.#phase = 'playing';
+      return;
+    }
+
+    // La mission suivante est chargée tout de suite, mais reste figée le temps
+    // de l'annonce : c'est ce qui permet d'afficher ses ennemis avant qu'elle
+    // ne démarre, et de faire partir le monde et sa musique ensemble.
+    this.#world = this.#openMission();
+    this.#beginBriefing();
+  }
+
+  /** Fige la mission chargée le temps de son annonce. */
+  #beginBriefing(): void {
+    this.#phase = 'briefing';
+    this.#pauseTicks = secondsToTicks(BRIEFING_SECONDS);
   }
 
   /** Charge la mission courante dans un monde neuf. */

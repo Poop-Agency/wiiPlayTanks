@@ -23,9 +23,31 @@ type Page = import('@playwright/test').Page;
 
 const SERVER = 'http://localhost:3000';
 
-/** Ouvre un client dans une salle donnée et attend sa première réception. */
+/**
+ * Ouvre un client dans une salle donnée, démarre la partie si elle attend
+ * encore, et attend la première réception.
+ *
+ * Le salon (#lobby-coop) n'a plus de départ automatique : le premier arrivant
+ * doit appuyer sur Entrée. Un arrivant suivant peut trouver la partie déjà
+ * lancée — l'arrivée libre en cours de partie a son propre comportement — et
+ * n'a alors rien à démarrer.
+ */
 async function openClient(page: Page, room: string, name: string): Promise<void> {
   await page.goto(`${SERVER}/?enligne=1&salon=${room}&nom=${name}`);
+
+  await page.waitForFunction(
+    () =>
+      window.__tanks?.campaign?.lobby !== undefined ||
+      (window.__tanks?.campaign?.enemiesLeft ?? 0) > 0,
+    undefined,
+    { timeout: 10_000 },
+  );
+
+  if (await page.evaluate(() => window.__tanks?.campaign?.lobby !== undefined)) {
+    await page.bringToFront();
+    await page.keyboard.press('Enter');
+  }
+
   await page.waitForFunction(() => (window.__tanks?.campaign?.enemiesLeft ?? 0) > 0, undefined, {
     timeout: 15_000,
   });
@@ -63,6 +85,16 @@ test('la connexion n\'affiche jamais un faux bandeau d\'échec', async ({ browse
     if (outcome !== undefined) break;
     await page.waitForTimeout(20);
   }
+
+  // Le salon n'a plus de départ automatique : sans appuyer sur Entrée, la
+  // partie resterait en attente indéfiniment.
+  await page.waitForFunction(() => window.__tanks?.campaign?.lobby !== undefined, undefined, {
+    timeout: 10_000,
+  });
+  expect(await page.evaluate(() => window.__tanks!.campaign!.outcome)).toBe('playing');
+
+  await page.bringToFront();
+  await page.keyboard.press('Enter');
 
   await page.waitForFunction(() => (window.__tanks?.campaign?.enemiesLeft ?? 0) > 0, undefined, {
     timeout: 15_000,

@@ -7,6 +7,7 @@
  * distinguent au premier coup d'oeil sur ce fond.
  */
 
+import { PLAYER_SEAT_COLORS } from '@core/state';
 import type { TankColor } from '@core/state';
 
 export const BOARD = {
@@ -66,6 +67,9 @@ export const BLAST = {
 /** Couleur principale de chaque type de tank. */
 export const TANK_COLORS: Record<TankColor, string> = {
   player: '#4a90d9',
+  player2: '#e0453f',
+  player3: '#22c3d4',
+  player4: '#c04ae0',
   brown: '#8b5a2b',
   ash: '#8a8a8a',
   teal: '#189aa0',
@@ -76,6 +80,8 @@ export const TANK_COLORS: Record<TankColor, string> = {
   white: '#f2f2f2',
   black: '#3a3a3a',
 };
+
+export { PLAYER_SEAT_COLORS };
 
 /**
  * Assombrit une couleur hexadécimale d'un facteur donné.
