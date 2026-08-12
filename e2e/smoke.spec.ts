@@ -19,18 +19,25 @@ test('la page se charge et peint le canevas sans erreur console', async ({ page 
   await expect(canvas).toBeVisible();
 
   // La taille du canevas se déduit du terrain chargé, on ne la code donc pas en
-  // dur : chaque mission a ses propres dimensions.
+  // dur. En hauteur elle dépasse le plateau : le HUD et le bandeau de
+  // diagnostic ont chacun leur bande réservée, plutôt que d'être peints
+  // par-dessus le jeu — superposés, ils masquaient le mur d'enceinte.
   const dimensions = await canvas.evaluate((element) => {
-    const grid = window.__tanks?.world.grid;
+    const target = element as HTMLCanvasElement;
+    const grid = window.__tanks!.world.grid;
+
     return {
-      actual: {
-        width: (element as HTMLCanvasElement).width,
-        height: (element as HTMLCanvasElement).height,
-      },
-      expected: grid ? { width: grid.width * 32, height: grid.height * 32 } : null,
+      width: target.width,
+      height: target.height,
+      boardWidth: grid.width * 32,
+      boardHeight: grid.height * 32,
     };
   });
-  expect(dimensions.actual).toEqual(dimensions.expected);
+
+  expect(dimensions.width).toBe(dimensions.boardWidth);
+  expect(dimensions.height).toBeGreaterThan(dimensions.boardHeight);
+  // Des bandes, pas un second plateau.
+  expect(dimensions.height).toBeLessThan(dimensions.boardHeight + 160);
 
   // Le canevas ne doit pas être resté transparent : au moins un pixel opaque.
   const hasPaintedPixels = await canvas.evaluate((element) => {
@@ -49,7 +56,11 @@ test('la page se charge et peint le canevas sans erreur console', async ({ page 
 });
 
 test('la simulation avance à 60 pas par seconde de temps réel', async ({ page }) => {
-  await page.goto('/');
+  // Sur le terrain d'essai sans ennemis, et non sur la campagne : un changement
+  // de mission ouvre un monde neuf dont le compteur de pas repart de zéro, ce
+  // qui rendrait la mesure absurde. Ce qu'on vérifie ici est la cadence de la
+  // boucle, pas le déroulement d'une partie.
+  await page.goto('/?bac=1&calme=1');
 
   // On mesure sur le compteur de pas de la simulation et sur l'horloge du
   // navigateur, sans faire confiance à la cadence d'affichage : c'est

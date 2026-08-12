@@ -1,9 +1,16 @@
 /**
  * Terrain d'essai.
  *
- * Provisoire : les 20 vraies missions arrivent en #12, portées depuis les
- * tracés de `legacy/src/level.ts`. Celui-ci existe pour éprouver les
- * mécaniques, et réunit volontairement les situations qui les mettent en
+ * La campagne des vingt missions vit désormais dans `shared/missions/`. Cette
+ * arène-ci lui survit avec un autre rôle : c'est le banc d'essai des tests
+ * bout-en-bout, dont la géométrie est **stable par contrat**. Une mission de
+ * campagne peut être retracée pour des raisons de jouabilité ; ce terrain, non,
+ * sans quoi chaque retouche de level design casserait des tests de physique
+ * sans aucun rapport.
+ *
+ * On y accède par `?bac=1`, et `?bac=1&calme=1` en retire les ennemis.
+ *
+ * Il réunit volontairement les situations qui mettent les mécaniques en
  * défaut :
  *
  *   - un terrain **ouvert avec des couverts épars**, et non un labyrinthe de
@@ -15,9 +22,13 @@
  *   - quatre couleurs d'ennemis aux comportements franchement distincts.
  */
 
-import type { World } from '@core/state';
+import type { InputCommand, Tank, World } from '@core/state';
 import { createTank, createWorld } from '@core/world';
 import { parseMission } from '@shared/missions/parse';
+import type { RenderSnapshot } from '../render/snapshots';
+import type { Session } from '../session';
+import type { CampaignView } from './LocalCampaign';
+import { LocalGame } from './LocalGame';
 
 const SANDBOX = `
 #########################
@@ -82,4 +93,29 @@ export function createSandbox(options: SandboxOptions = {}): {
   }
 
   return { world, playerTankId: player.id };
+}
+
+/**
+ * Enveloppe le terrain d'essai dans une {@link Session}.
+ *
+ * Il n'y a ni mission, ni réserve, ni progression : `status()` rend donc `null`
+ * et le HUD s'efface de lui-même. Redémarrer non plus n'a pas de sens — on
+ * recharge la page.
+ */
+export function createSandboxSession(options: SandboxOptions = {}): Session {
+  const { world, playerTankId } = createSandbox(options);
+  const game = new LocalGame(world, playerTankId);
+
+  return {
+    get world(): World {
+      return game.world;
+    },
+    get playerTank(): Tank | undefined {
+      return game.playerTank;
+    },
+    update: (input: InputCommand): void => game.update(input),
+    view: (alpha: number): RenderSnapshot => game.view(alpha),
+    status: (): CampaignView | null => null,
+    restart: (): void => {},
+  };
 }
