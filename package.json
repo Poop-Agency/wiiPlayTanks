@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "serve": "bun run src/server/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test ./tests",
     "e2e": "playwright test"
   },
   "devDependencies": {
