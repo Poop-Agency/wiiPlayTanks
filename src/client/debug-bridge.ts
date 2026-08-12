@@ -12,6 +12,7 @@
  */
 
 import type { World } from '@core/state';
+import type { Tuning } from '@core/tuning';
 
 /** Cadences mesurées, pour vérifier que la simulation reste indépendante de l'écran. */
 export interface RateProbe {
@@ -25,6 +26,11 @@ export interface RateProbe {
 export interface TanksDebugBridge {
   world: World;
   rates: RateProbe;
+  /**
+   * Table de réglages vivante. Les tests s'y réfèrent plutôt que de recopier
+   * des valeurs, et le panneau de calibration (#10) l'éditera en place.
+   */
+  tuning: Tuning;
 }
 
 declare global {

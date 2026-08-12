@@ -9,6 +9,7 @@
  */
 
 import { TICK_RATE } from '@core/tick';
+import { TUNING } from '@core/tuning';
 import { exposeDebugBridge } from './debug-bridge';
 import type { RateProbe } from './debug-bridge';
 import { InputSampler } from './input/sampler';
@@ -65,9 +66,13 @@ function sampleRates(nowMs: number): void {
 }
 
 function drawOverlay(ctx: CanvasRenderingContext2D): void {
+  const tank = game.playerTank;
+  const shells = tank ? `${tank.activeShells}/${TUNING.tank.maxActiveShells}` : '—';
+
   const lines = [
     `pas/s ${rates.ticksPerSecond} (attendu ${TICK_RATE})   frames/s ${rates.framesPerSecond}`,
-    'ZQSD ou WASD ou flèches — souris pour viser',
+    `obus en vol ${shells}`,
+    'ZQSD / WASD / flèches — souris pour viser, clic pour tirer',
   ];
 
   // En bas de l'image : le bandeau ne doit pas masquer le terrain de jeu.
@@ -109,4 +114,4 @@ startGameLoop({
   },
 });
 
-exposeDebugBridge({ world, rates });
+exposeDebugBridge({ world, rates, tuning: TUNING });

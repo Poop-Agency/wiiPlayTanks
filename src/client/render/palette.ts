@@ -34,6 +34,20 @@ export const BLOCKS = {
   holeRim: '#7a6a55',
 };
 
+/**
+ * Obus.
+ *
+ * Volontairement neutres et non teintés par le tireur : sur un plateau où six
+ * tanks tirent en même temps, ce qui compte est de repérer un projectile, pas
+ * de savoir d'où il vient. Le missile se distingue par sa forme.
+ */
+export const SHELL = {
+  normalBody: '#3b3630',
+  normalHighlight: '#9c948a',
+  fastBody: '#d9d2c4',
+  fastTip: '#e8623a',
+};
+
 /** Couleur principale de chaque type de tank. */
 export const TANK_COLORS: Record<TankColor, string> = {
   player: '#4a90d9',
