@@ -126,9 +126,9 @@ export const TUNING: Tuning = {
     // sans donner l'impression de pivoter instantanément.
     turnRateRadiansPerSecond: Math.PI * 3,
     // 5, et non le 4 que fixait `legacy/src/game.ts` : cette valeur-là était un
-    // choix d'implémentation, pas un relevé.
+    // choix d'implémentation, pas un relevé. Confirmé sur le jeu original.
     maxActiveShells: 5,
-    // ⚠ Non mesuré — voir la section `mine` plus bas.
+    // Confirmé sur le jeu original, contrairement au reste de la section `mine`.
     maxActiveMines: 2,
   },
   shell: {
@@ -147,7 +147,8 @@ export const TUNING: Tuning = {
   //   · fuseSeconds      → temps entre la pose et l'explosion
   //   · blastRadiusTiles → portée du souffle, en nombre de blocs détruits
   //   · cooldownSeconds  → délai minimal observé entre deux poses
-  // Et à confirmer : le nombre de mines simultanées (`tank.maxActiveMines`).
+  //
+  // Le nombre de mines simultanées (`tank.maxActiveMines`), lui, est confirmé.
   mine: {
     fuseSeconds: 3,
     // Deux tuiles : de quoi ouvrir un passage franc dans un mur cassable, ce
