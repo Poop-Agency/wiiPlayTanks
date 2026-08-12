@@ -78,6 +78,24 @@ export type TankColor =
   | 'white'
   | 'black';
 
+/**
+ * Mémoire d'un tank piloté par l'IA.
+ *
+ * Elle vit **dans l'état du monde** et non dans une structure annexe : sans ça,
+ * un rejeu ou une réconciliation réseau repartirait avec une IA amnésique et
+ * les deux simulations divergeraient.
+ */
+export interface TankAiState {
+  /** Angle de tir retenu au dernier calcul, ou `null` si aucune solution. */
+  solutionAngle: number | null;
+  /** Ticks avant le prochain tir autorisé. */
+  fireCooldownTicks: number;
+  /** Direction suivie en patrouille, en radians. */
+  roamAngle: number;
+  /** Ticks avant de choisir une nouvelle direction de patrouille. */
+  roamTicks: number;
+}
+
 export interface Tank {
   id: EntityId;
   color: TankColor;
@@ -114,6 +132,9 @@ export interface Tank {
    * qui obligerait à mémoriser l'entrée précédente dans l'état.
    */
   mineReloadTicks: number;
+
+  /** Mémoire d'IA, ou `null` pour un tank piloté par un joueur. */
+  ai: TankAiState | null;
 }
 
 /* ── Projectiles ──────────────────────────────────────────────────────────── */

@@ -28,7 +28,7 @@ async function hold(page: Page, keys: string[], milliseconds: number): Promise<v
 }
 
 test('un clic droit bref pose bien une mine', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?calme=1');
   await page.waitForTimeout(300);
 
   expect((await survey(page)).mines).toBe(0);
@@ -44,23 +44,24 @@ test('un clic droit bref pose bien une mine', async ({ page }) => {
 });
 
 test('la mine perce la barrière cassable et ouvre le passage', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?calme=1');
   await page.waitForTimeout(300);
 
   const start = await survey(page);
 
-  // La barrière cassable est à cinq tuiles à gauche du point de départ : le
-  // tank vient s'y plaquer et ne peut pas aller plus loin.
-  await hold(page, ['KeyA'], 2200);
+  // Une paire de blocs cassables ferme le couloir à gauche du point de départ :
+  // le tank vient s'y plaquer et ne peut pas aller plus loin.
+  await hold(page, ['KeyA'], 1500);
   const blocked = await survey(page);
   expect(blocked.tankX).toBeLessThan(start.tankX);
 
-  // Poser la mine puis se replier hors du rayon.
+  // Poser la mine, puis se replier vers le haut : le couloir est trop étroit
+  // pour sortir du rayon de souffle en reculant simplement.
   await page.mouse.click(300, 300, { button: 'right' });
   await page.waitForTimeout(100);
   expect((await survey(page)).mines).toBe(1);
 
-  await hold(page, ['KeyD'], 1200);
+  await hold(page, ['KeyW'], 1600);
 
   // Attendre la détonation.
   let detonated = false;
@@ -80,14 +81,15 @@ test('la mine perce la barrière cassable et ouvre le passage', async ({ page })
   // Le tank s'était éloigné : il a survécu à sa propre mine.
   expect(after.tankAlive).toBe(true);
 
-  // Et le passage est désormais franchissable.
-  await hold(page, ['KeyA'], 2600);
+  // Et le passage est désormais franchissable : on redescend puis on traverse.
+  await hold(page, ['KeyS'], 1600);
+  await hold(page, ['KeyA'], 2000);
   const through = await survey(page);
   expect(through.tankX).toBeLessThan(blocked.tankX - 0.5);
 });
 
 test('rester sur sa propre mine est fatal', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?calme=1');
   await page.waitForTimeout(300);
 
   await page.mouse.click(300, 300, { button: 'right' });

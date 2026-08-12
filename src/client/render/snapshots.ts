@@ -15,6 +15,7 @@
 
 import { lerp, lerpAngle } from '@core/math';
 import type { ShellKind, TankColor, World } from '@core/state';
+import { profileOf } from '@core/systems/ai/profiles';
 import { TICK_RATE } from '@core/tick';
 import { TUNING } from '@core/tuning';
 
@@ -26,6 +27,14 @@ export interface TankView {
   bodyAngle: number;
   turretAngle: number;
   alive: boolean;
+  /**
+   * Le tank est-il visible ?
+   *
+   * Faux pour un tank blanc au repos. Il se révèle brièvement en tirant, ce qui
+   * laisse au joueur une chance de le localiser — sans quoi il serait
+   * impossible à combattre autrement qu'au hasard.
+   */
+  visible: boolean;
 }
 
 export interface ShellView {
@@ -86,6 +95,9 @@ export function captureSnapshot(world: World): RenderSnapshot {
       bodyAngle: tank.bodyAngle,
       turretAngle: tank.turretAngle,
       alive: tank.alive,
+      // Le rechargement en cours signale un tir tout juste parti : c'est la
+      // fenêtre pendant laquelle un tank invisible se trahit.
+      visible: !profileOf(tank.color).invisible || tank.reloadTicks > 0,
     })),
     shells: world.shells.map((shell) => ({
       id: shell.id,

@@ -15,22 +15,22 @@ import { blocksTank, sweepAxis } from '../grid.js';
 import { limitToUnitDisc, rotateToward } from '../math.js';
 import { DT } from '../tick.js';
 import { TUNING } from '../tuning.js';
+import { profileOf } from './ai/profiles.js';
 import type { InputCommand, Tank, World } from '../state.js';
-
-/**
- * Vitesse de déplacement d'un tank, en tuiles par seconde.
- *
- * Le multiplicateur par couleur arrive avec les profils d'IA (#11) ; d'ici là,
- * tous les tanks avancent à la vitesse de référence du joueur.
- */
-function speedOf(_tank: Tank): number {
-  return TUNING.tank.speedTilesPerSecond;
-}
 
 /** Applique l'intention d'un tick à un tank. */
 export function applyMovement(world: World, tank: Tank, input: InputCommand): void {
-  // La tourelle suit la visée sans inertie : elle est pointée, pas pilotée.
-  tank.turretAngle = input.aim;
+  const profile = profileOf(tank.color);
+
+  // La tourelle du joueur suit le pointeur sans inertie — son profil déclare
+  // une vitesse de rotation infinie, que `rotateToward` traite comme un
+  // alignement immédiat. Les tanks de l'IA, eux, mettent un temps mesurable à
+  // se retourner, et c'est ce délai qui rend leurs tirs esquivables.
+  tank.turretAngle = rotateToward(
+    tank.turretAngle,
+    input.aim,
+    profile.turretRateRadiansPerSecond * DT,
+  );
 
   if (!tank.alive) return;
 
@@ -47,15 +47,43 @@ export function applyMovement(world: World, tank: Tank, input: InputCommand): vo
       TUNING.tank.turnRateRadiansPerSecond * DT,
     );
 
-    const step = speedOf(tank) * DT;
+    const step = TUNING.tank.speedTilesPerSecond * profile.speedMultiplier * DT;
     const half = TUNING.tank.sizeTiles / 2;
 
     // X d'abord, puis Y avec le X déjà résolu : c'est cet enchaînement qui
     // produit le glissement. Tester les deux axes ensemble rejetterait le
     // déplacement entier dès qu'un seul des deux est bloqué.
+    const originX = tank.x;
     tank.x = sweepAxis(world.grid, tank.x, tank.y, half, blocksTank, 'x', direction.x * step);
+    if (overlapsAnotherTank(world, tank)) tank.x = originX;
+
+    const originY = tank.y;
     tank.y = sweepAxis(world.grid, tank.x, tank.y, half, blocksTank, 'y', direction.y * step);
+    if (overlapsAnotherTank(world, tank)) tank.y = originY;
   }
+}
+
+/**
+ * Le tank chevauche-t-il un autre tank vivant ?
+ *
+ * Les tanks sont des obstacles les uns pour les autres : sans ça, deux tanks de
+ * l'IA qui convergent vers la même position finissent superposés, ce qui est
+ * autant un défaut visuel qu'un défaut de jeu — deux tanks empilés se
+ * comportent comme un seul.
+ *
+ * Le test est fait après chaque axe, et l'axe fautif est simplement annulé. Un
+ * tank bloqué par un autre glisse donc le long de lui, exactement comme le long
+ * d'un mur.
+ */
+function overlapsAnotherTank(world: World, tank: Tank): boolean {
+  const size = TUNING.tank.sizeTiles;
+
+  for (const other of world.tanks) {
+    if (other.id === tank.id || !other.alive) continue;
+    if (Math.abs(other.x - tank.x) < size && Math.abs(other.y - tank.y) < size) return true;
+  }
+
+  return false;
 }
 
 /**

@@ -7,6 +7,7 @@
  */
 
 import { createRng } from './rng.js';
+import { createAiState } from './systems/ai/brain.js';
 import { TileKind } from './state.js';
 import type { EntityId, Grid, Tank, TankColor, World } from './state.js';
 
@@ -85,11 +86,12 @@ export interface TankOptions {
  */
 export function createTank(world: World, options: TankOptions): Tank {
   const angle = options.angle ?? 0;
+  const playerId = options.playerId ?? null;
 
   const tank: Tank = {
     id: allocateEntityId(world),
     color: options.color,
-    playerId: options.playerId ?? null,
+    playerId,
     x: options.x,
     y: options.y,
     bodyAngle: angle,
@@ -99,6 +101,8 @@ export function createTank(world: World, options: TankOptions): Tank {
     activeMines: 0,
     reloadTicks: 0,
     mineReloadTicks: 0,
+    // Un tank sans joueur est piloté par l'IA, et reçoit donc sa mémoire.
+    ai: playerId === null ? createAiState() : null,
   };
 
   world.tanks.push(tank);

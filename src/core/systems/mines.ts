@@ -16,6 +16,7 @@ import { TileKind } from '../state.js';
 import { secondsToTicks } from '../tick.js';
 import { TUNING } from '../tuning.js';
 import { allocateEntityId } from '../world.js';
+import { profileOf } from './ai/profiles.js';
 import type { EntityId, InputCommand, Mine, Tank, World } from '../state.js';
 
 /**
@@ -26,7 +27,8 @@ import type { EntityId, InputCommand, Mine, Tank, World } from '../state.js';
 export function layMine(world: World, tank: Tank): Mine | null {
   if (!tank.alive) return null;
   if (tank.mineReloadTicks > 0) return null;
-  if (tank.activeMines >= TUNING.tank.maxActiveMines) return null;
+  // Le quota vient du profil : plusieurs couleurs n'en posent pas du tout.
+  if (tank.activeMines >= profileOf(tank.color).maxActiveMines) return null;
 
   const mine: Mine = {
     id: allocateEntityId(world),

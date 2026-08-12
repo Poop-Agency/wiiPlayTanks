@@ -330,3 +330,90 @@ export function sweepBoxAgainstGrid(
   if (!Number.isFinite(earliest)) return null;
   return { time: earliest, normalX, normalY };
 }
+
+/* ── Lancer de rayon ──────────────────────────────────────────────────────── */
+
+/** Premier obstacle rencontré par un rayon. */
+export interface RayHit {
+  /** Distance parcourue jusqu'à l'impact, en tuiles. */
+  distance: number;
+  normalX: number;
+  normalY: number;
+}
+
+/**
+ * Premier obstacle sur le trajet d'un rayon, par parcours de grille (DDA).
+ *
+ * Ne visite que les tuiles réellement traversées, là où
+ * {@link sweepBoxAgainstGrid} examine toute la boîte englobante du déplacement.
+ * Sur un rayon de vingt tuiles en diagonale, cela fait une quarantaine de
+ * tuiles au lieu de quatre cents — ce qui rend abordable la recherche d'angle
+ * de tir de l'IA, qui en lance des centaines.
+ *
+ * Le projectile est traité comme un **point** : c'est une prédiction, et chaque
+ * profil de tank applique de toute façon son propre cône d'erreur. La physique
+ * réelle des obus, elle, reste le balayage exact de `sweepBoxAgainstGrid`.
+ *
+ * @param dirX composante X d'une direction **normalisée**
+ * @param dirY composante Y d'une direction **normalisée**
+ */
+export function raycastGrid(
+  grid: Grid,
+  originX: number,
+  originY: number,
+  dirX: number,
+  dirY: number,
+  maxDistance: number,
+  isSolid: SolidityTest,
+): RayHit | null {
+  let tileX = Math.floor(originX);
+  let tileY = Math.floor(originY);
+
+  // Origine déjà dans un mur : impact immédiat, sans normale exploitable.
+  if (isSolid(tileAt(grid, tileX, tileY))) {
+    return { distance: 0, normalX: 0, normalY: 0 };
+  }
+
+  const stepX = dirX >= 0 ? 1 : -1;
+  const stepY = dirY >= 0 ? 1 : -1;
+
+  // Distance parcourue pour franchir une tuile entière sur chaque axe.
+  const spanX = dirX === 0 ? Number.POSITIVE_INFINITY : Math.abs(1 / dirX);
+  const spanY = dirY === 0 ? Number.POSITIVE_INFINITY : Math.abs(1 / dirY);
+
+  // Distance jusqu'à la première frontière de tuile sur chaque axe.
+  let nextX =
+    dirX === 0
+      ? Number.POSITIVE_INFINITY
+      : (dirX > 0 ? tileX + 1 - originX : originX - tileX) * spanX;
+  let nextY =
+    dirY === 0
+      ? Number.POSITIVE_INFINITY
+      : (dirY > 0 ? tileY + 1 - originY : originY - tileY) * spanY;
+
+  // Garde-fou : une direction non normalisée ou dégénérée ne doit pas boucler.
+  const maxSteps = 4 * (grid.width + grid.height);
+
+  for (let step = 0; step < maxSteps; step++) {
+    let distance: number;
+    let normalX = 0;
+    let normalY = 0;
+
+    if (nextX < nextY) {
+      distance = nextX;
+      tileX += stepX;
+      nextX += spanX;
+      normalX = -stepX;
+    } else {
+      distance = nextY;
+      tileY += stepY;
+      nextY += spanY;
+      normalY = -stepY;
+    }
+
+    if (distance > maxDistance) return null;
+    if (isSolid(tileAt(grid, tileX, tileY))) return { distance, normalX, normalY };
+  }
+
+  return null;
+}
