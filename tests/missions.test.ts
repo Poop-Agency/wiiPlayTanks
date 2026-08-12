@@ -294,10 +294,60 @@ describe('chargement d\'une mission', () => {
     expect(first.world.tanks).toEqual(second.world.tanks);
   });
 
-  test('demander plus de joueurs que de départs est refusé', () => {
-    expect(() => loadMission(MISSIONS[0]!, { playerIds: ['p1', 'p2'] })).toThrow(
-      /points de départ/,
-    );
+  test('les coéquipiers apparaissent autour du départ déclaré', () => {
+    // L'original est un jeu solo : ses arènes n'ont qu'un point de départ. Le
+    // co-op est un ajout de cette refonte, et les places manquantes sont
+    // dérivées des tuiles voisines plutôt qu'inventées sur vingt grilles.
+    const { world } = loadMission(MISSIONS[0]!, { playerIds: ['p1', 'p2', 'p3', 'p4'] });
+    const players = world.tanks.filter((tank) => tank.playerId !== null);
+
+    expect(players).toHaveLength(4);
+
+    const declared = parseMission(MISSIONS[0]!.grid).playerSpawns[0]!;
+    for (const tank of players) {
+      // Assez près pour hériter des garanties du départ d'origine :
+      // accessibilité et distance aux ennemis.
+      expect(Math.hypot(tank.x - declared.x, tank.y - declared.y)).toBeLessThanOrEqual(6);
+    }
+  });
+
+  test('les coéquipiers ne se gênent pas au départ', () => {
+    // Deux tanks posés sur des tuiles voisines se touchent par leurs boîtes de
+    // collision : le premier qui part dans la mauvaise direction reste bloqué
+    // contre son voisin, et croit à un bug de pilotage.
+    for (const mission of MISSIONS) {
+      const { world } = loadMission(mission, { playerIds: ['p1', 'p2', 'p3', 'p4'] });
+      const players = world.tanks.filter((tank) => tank.playerId !== null);
+
+      for (const tank of players) {
+        for (const other of players) {
+          if (other.id === tank.id) continue;
+          expect(Math.hypot(other.x - tank.x, other.y - tank.y)).toBeGreaterThanOrEqual(
+            TUNING.tank.sizeTiles * 2,
+          );
+        }
+      }
+    }
+  });
+
+  test('les places dérivées sont sur du sol libre, dans toutes les missions', () => {
+    for (const mission of MISSIONS) {
+      const { world } = loadMission(mission, { playerIds: ['p1', 'p2', 'p3', 'p4'] });
+
+      for (const tank of world.tanks.filter((each) => each.playerId !== null)) {
+        const kind = tileAt(world.grid, Math.floor(tank.x), Math.floor(tank.y));
+        expect(blocksTank(kind)).toBe(false);
+      }
+    }
+  });
+
+  test('la dérivation est déterministe', () => {
+    // Serveur et client chargent la même mission chacun de leur côté : deux
+    // placements différents rendraient la réconciliation impossible.
+    const first = loadMission(MISSIONS[8]!, { playerIds: ['p1', 'p2', 'p3'] });
+    const second = loadMission(MISSIONS[8]!, { playerIds: ['p1', 'p2', 'p3'] });
+
+    expect(first.world.tanks).toEqual(second.world.tanks);
   });
 
   test('les vingt missions se chargent sans erreur', () => {

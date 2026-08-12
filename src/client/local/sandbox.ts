@@ -27,7 +27,7 @@ import { createTank, createWorld } from '@core/world';
 import { parseMission } from '@shared/missions/parse';
 import type { RenderSnapshot } from '../render/snapshots';
 import type { Session } from '../session';
-import type { CampaignView } from './LocalCampaign';
+import type { CampaignView } from '../session';
 import { LocalGame } from './LocalGame';
 
 const SANDBOX = `
