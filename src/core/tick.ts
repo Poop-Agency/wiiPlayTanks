@@ -14,8 +14,10 @@
  * dérivaient l'un de l'autre.
  */
 
+import { resolveShellShellHits, resolveShellTankHits } from './systems/damage.js';
 import { updateMovement } from './systems/movement.js';
-import type { InputCommand, World } from './state.js';
+import { removeDoomedShells, updateFiring, updateShells } from './systems/shells.js';
+import type { EntityId, InputCommand, World } from './state.js';
 
 /**
  * Fréquence de simulation, en pas par seconde.
@@ -41,7 +43,7 @@ export function secondsToTicks(seconds: number): number {
  * Un tableau de paires plutôt qu'une `Map` : le monde et ses entrées doivent
  * rester sérialisables tels quels pour l'enregistrement et le rejeu.
  */
-export type TickInputs = ReadonlyArray<readonly [tankId: number, input: InputCommand]>;
+export type TickInputs = ReadonlyArray<readonly [tankId: EntityId, input: InputCommand]>;
 
 /**
  * Fait avancer le monde d'exactement un pas.
@@ -62,15 +64,29 @@ export function tick(world: World, inputs: TickInputs): void {
   // 2. Déplacement des tanks : résolution X puis Y, glissement le long des murs.
   updateMovement(world, intents);
 
-  // 3. Déplacement des obus       → #8  (intégration balayée, rebonds)
-  // 4. Mèches et détonations      → #9  (mines, explosions, destruction du terrain)
-  // 5. Résolution des dégâts      → #8/#9 (obus↔tank, obus↔obus, explosion↔entités)
+  // 3. Tirs, après le déplacement : l'obus part de la position finale du tank.
+  updateFiring(world, intents);
+
+  // Entités condamnées durant ce pas. Volontairement local et non stocké dans
+  // le monde : retirer une entité en cours de parcours décalerait les indices
+  // et ferait sauter la suivante — c'est le bug qui rendait la détection de
+  // collisions inopérante dans l'ancienne version.
+  const doomed = new Set<EntityId>();
+
+  // 4. Trajectoire des obus : balayage continu et rebonds.
+  updateShells(world, doomed);
+
+  // 5. Mèches et détonations → #9 (mines, explosions, destruction du terrain)
+
+  // 6. Impacts. Obus contre obus d'abord : deux obus qui se croisent
+  //    s'annulent, même si l'un d'eux atteignait un tank au même pas.
+  resolveShellShellHits(world, doomed);
+  resolveShellTankHits(world, doomed);
 
   advanceTimers(world);
 
-  // 6. Compactage : les entités marquées mortes disparaissent ici, et seulement
-  //    ici. Supprimer en cours d'itération est ce qui faisait « sauter » un obus
-  //    sur deux dans l'ancienne boucle (`splice` pendant un `forEach`).
+  // 7. Compactage : les entités marquées disparaissent ici, et seulement ici.
+  removeDoomedShells(world, doomed);
   removeExpiredExplosions(world);
 
   world.tick++;

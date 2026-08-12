@@ -97,10 +97,21 @@ export interface Tank {
 
 /* ── Projectiles ──────────────────────────────────────────────────────────── */
 
+/**
+ * Type de projectile.
+ *
+ * Détermine la vitesse et l'apparence. Le nombre de rebonds est porté
+ * séparément par `bouncesLeft` : le tank vert tire un missile rapide **avec**
+ * deux rebonds, donc les deux caractéristiques ne sont pas liées.
+ */
+export type ShellKind = 'normal' | 'fast';
+
 export interface Shell {
   id: EntityId;
   /** Tank qui a tiré. L'obus reste mortel pour lui après ricochet. */
   ownerId: EntityId;
+
+  kind: ShellKind;
 
   /** Position du centre, en tuiles. */
   x: number;
@@ -111,10 +122,18 @@ export interface Shell {
 
   /**
    * Rebonds encore autorisés. À zéro, le prochain contact détruit l'obus.
-   * Dépend du type d'obus : 1 pour un obus normal, 0 pour un missile, 2 pour
-   * l'obus du tank vert.
+   * 1 pour un obus normal, 0 pour un missile, 2 pour l'obus du tank vert.
    */
   bouncesLeft: number;
+
+  /**
+   * L'obus est-il devenu dangereux pour celui qui l'a tiré ?
+   *
+   * Faux tant que l'obus chevauche encore son tireur — sinon il le tuerait dès
+   * la sortie du canon. Il s'arme dès qu'il l'a quitté, ce qui reproduit la
+   * règle de l'original : **on peut se tuer soi-même avec son propre ricochet**.
+   */
+  armed: boolean;
 }
 
 export interface Mine {

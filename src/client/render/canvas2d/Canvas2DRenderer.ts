@@ -10,9 +10,9 @@ import { TileKind } from '@core/state';
 import type { Grid } from '@core/state';
 import { TILE_SIZE_PX, TUNING } from '@core/tuning';
 import { tileAt } from '@core/grid';
-import { BLOCKS, BOARD, TANK_COLORS, darken, lighten } from '../palette';
+import { BLOCKS, BOARD, SHELL, TANK_COLORS, darken, lighten } from '../palette';
 import type { Renderer } from '../Renderer';
-import type { RenderSnapshot, TankView } from '../snapshots';
+import type { RenderSnapshot, ShellView, TankView } from '../snapshots';
 
 /** Décalage vertical des faces de blocs, qui simule leur épaisseur. */
 const BLOCK_RELIEF_PX = 5;
@@ -63,6 +63,11 @@ export class Canvas2DRenderer implements Renderer {
 
     for (const tank of view.tanks) {
       if (tank.alive) this.#drawTank(tank);
+    }
+
+    // Les obus par-dessus les tanks : c'est ce qu'on doit suivre des yeux.
+    for (const shell of view.shells) {
+      this.#drawShell(shell);
     }
   }
 
@@ -233,6 +238,48 @@ export class Canvas2DRenderer implements Renderer {
     ctx.strokeStyle = darken(color, 0.5);
     ctx.stroke();
     ctx.restore();
+
+    ctx.restore();
+  }
+
+  /* ── Obus ────────────────────────────────────────────────────────────── */
+
+  #drawShell(shell: ShellView): void {
+    const ctx = this.#ctx;
+    const radius = TUNING.shell.radiusTiles * TILE_SIZE_PX;
+    const x = shell.x * TILE_SIZE_PX;
+    const y = shell.y * TILE_SIZE_PX;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    ctx.fillStyle = BOARD.shadow;
+    ctx.beginPath();
+    ctx.arc(1.5, 2.5, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (shell.kind === 'fast') {
+      // Le missile est allongé dans son axe : à deux fois la vitesse d'un obus
+      // normal, sa forme doit trahir sa nature avant qu'il n'arrive.
+      ctx.rotate(shell.heading);
+      ctx.fillStyle = SHELL.fastBody;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, radius * 2.1, radius, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = SHELL.fastTip;
+      ctx.beginPath();
+      ctx.arc(radius * 1.1, 0, radius * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = SHELL.normalBody;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 1.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = SHELL.normalHighlight;
+      ctx.beginPath();
+      ctx.arc(-radius * 0.35, -radius * 0.35, radius * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }

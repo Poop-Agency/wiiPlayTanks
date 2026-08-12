@@ -87,7 +87,7 @@ describe('interpolation', () => {
   test('une entité qui vient d\'apparaître est prise telle quelle', () => {
     // La faire glisser depuis une position d'origine inventée produirait un
     // fantôme traversant l'écran au moment du spawn.
-    const empty: RenderSnapshot = { tick: 0, tanks: [] };
+    const empty: RenderSnapshot = { tick: 0, tanks: [], shells: [] };
     const view = interpolateSnapshots(empty, current, 0.5).tanks[0]!;
 
     expect(view.x).toBe(4);

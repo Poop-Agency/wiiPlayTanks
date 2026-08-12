@@ -132,3 +132,201 @@ export function sweepAxis(
   if (delta > 0) return snapped > origin ? snapped : origin;
   return snapped < origin ? snapped : origin;
 }
+
+/* ── Balayage continu ─────────────────────────────────────────────────────── */
+
+/** Impact trouvé par un balayage continu. */
+export interface SweepHit {
+  /** Fraction du déplacement parcourue avant l'impact, dans [0, 1]. */
+  time: number;
+  /** Normale de la face touchée : -1, 0 ou 1 sur chaque axe. */
+  normalX: number;
+  normalY: number;
+}
+
+/**
+ * Deux impacts séparés de moins que cette fraction sont considérés simultanés.
+ *
+ * C'est ce qui permet de détecter un coin : deux tuiles perpendiculaires
+ * touchées au même instant doivent réfléchir **les deux** axes. Les traiter
+ * l'une après l'autre renverrait l'obus d'où il vient.
+ */
+const SIMULTANEOUS_HIT_TOLERANCE = 1e-9;
+
+/**
+ * Instant d'entrée d'une boîte mobile dans une tuile, par la méthode des
+ * tranches (« slab method »).
+ *
+ * La tuile est dilatée du demi-côté de la boîte, ce qui ramène le problème au
+ * déplacement d'un point — c'est la construction de Minkowski.
+ *
+ * ─── Arêtes internes ─────────────────────────────────────────────────────────
+ *
+ * Une face n'est une vraie surface de collision que si la tuile située de
+ * l'autre côté est franchissable. Le long d'un mur plat, la face gauche de
+ * chaque tuile est enfouie dans la tuile précédente : elle n'existe pas
+ * physiquement.
+ *
+ * Sans ce masquage, un obus tiré à 45° contre un mur plat atteint la face
+ * supérieure de la tuile et la face gauche de sa voisine **au même instant**.
+ * Les deux normales se cumulent, l'obus repart d'où il vient au lieu de
+ * ricocher. C'est le piège classique des grilles de tuiles, et il ne se
+ * manifeste qu'aux angles où les deux entrées coïncident — typiquement 45°.
+ *
+ * @returns l'instant d'entrée et l'entrée par axe, ou `null` s'il n'y a pas
+ *          d'impact dans ce pas
+ */
+function sweepAgainstTile(
+  grid: Grid,
+  isSolid: SolidityTest,
+  centerX: number,
+  centerY: number,
+  halfSize: number,
+  dx: number,
+  dy: number,
+  tileX: number,
+  tileY: number,
+): { time: number; entryX: number; entryY: number } | null {
+  const minX = tileX - halfSize;
+  const maxX = tileX + 1 + halfSize;
+  const minY = tileY - halfSize;
+  const maxY = tileY + 1 + halfSize;
+
+  let entryX: number;
+  let exitX: number;
+  if (dx === 0) {
+    // Aucun déplacement sur cet axe : soit on est déjà dans la tranche pour
+    // toujours, soit on n'y entrera jamais.
+    if (centerX <= minX || centerX >= maxX) return null;
+    entryX = Number.NEGATIVE_INFINITY;
+    exitX = Number.POSITIVE_INFINITY;
+  } else {
+    const first = (minX - centerX) / dx;
+    const second = (maxX - centerX) / dx;
+    entryX = Math.min(first, second);
+    exitX = Math.max(first, second);
+
+    // La face abordée sur cet axe est-elle une vraie surface ?
+    const neighbour = dx > 0 ? tileX - 1 : tileX + 1;
+    if (isSolid(tileAt(grid, neighbour, tileY))) {
+      entryX = Number.NEGATIVE_INFINITY;
+    }
+  }
+
+  let entryY: number;
+  let exitY: number;
+  if (dy === 0) {
+    if (centerY <= minY || centerY >= maxY) return null;
+    entryY = Number.NEGATIVE_INFINITY;
+    exitY = Number.POSITIVE_INFINITY;
+  } else {
+    const first = (minY - centerY) / dy;
+    const second = (maxY - centerY) / dy;
+    entryY = Math.min(first, second);
+    exitY = Math.max(first, second);
+
+    const neighbour = dy > 0 ? tileY - 1 : tileY + 1;
+    if (isSolid(tileAt(grid, tileX, neighbour))) {
+      entryY = Number.NEGATIVE_INFINITY;
+    }
+  }
+
+  const entry = Math.max(entryX, entryY);
+  const exit = Math.min(exitX, exitY);
+
+  // Les tranches ne se recouvrent pas, ou l'impact est hors du pas courant.
+  if (entry > exit || exit <= 0 || entry > 1) return null;
+
+  // Entrée à l'infini négatif : toutes les faces abordées sont internes, la
+  // tuile est enfouie dans le mur et ne peut rien arrêter.
+  // Entrée négative finie : chevauchement préexistant, l'appelant s'en occupe
+  // (un obus né dans un mur est détruit plutôt que réfléchi au hasard).
+  if (entry < 0) return null;
+
+  return { time: entry, entryX, entryY };
+}
+
+/**
+ * Trouve le **premier** obstacle rencontré par une boîte au cours d'un
+ * déplacement, et la normale de la face touchée.
+ *
+ * ─── Pourquoi un balayage plutôt qu'un test après coup ───────────────────────
+ *
+ * L'ancienne version déplaçait l'obus (`this.x += this.dx`) puis testait la
+ * collision. Deux conséquences :
+ *
+ *   - un obus rapide pouvait traverser un mur entre deux pas ;
+ *   - une fois l'obus **dans** le mur, il fallait deviner par quelle face il
+ *     était entré. Le code comparait les quatre chevauchements et retenait le
+ *     plus petit — ce qui est faux dans les coins et faux dès que la
+ *     pénétration est profonde, d'où les rebonds erratiques.
+ *
+ * Le balayage donne l'instant et la face exacts, sans avoir à deviner. Il rend
+ * aussi la physique insensible à la vitesse, ce qui compte puisque le panneau
+ * de calibration (#10) permettra de la modifier.
+ */
+export function sweepBoxAgainstGrid(
+  grid: Grid,
+  centerX: number,
+  centerY: number,
+  halfSize: number,
+  dx: number,
+  dy: number,
+  isSolid: SolidityTest,
+): SweepHit | null {
+  if (dx === 0 && dy === 0) return null;
+
+  // Phase large : uniquement les tuiles que le trajet peut atteindre.
+  const minTileX = Math.floor(Math.min(centerX, centerX + dx) - halfSize);
+  const maxTileX = Math.floor(Math.max(centerX, centerX + dx) + halfSize);
+  const minTileY = Math.floor(Math.min(centerY, centerY + dy) - halfSize);
+  const maxTileY = Math.floor(Math.max(centerY, centerY + dy) + halfSize);
+
+  let earliest = Number.POSITIVE_INFINITY;
+  let normalX = 0;
+  let normalY = 0;
+
+  for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+    for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+      if (!isSolid(tileAt(grid, tileX, tileY))) continue;
+
+      const hit = sweepAgainstTile(
+        grid,
+        isSolid,
+        centerX,
+        centerY,
+        halfSize,
+        dx,
+        dy,
+        tileX,
+        tileY,
+      );
+      if (!hit) continue;
+
+      if (hit.time < earliest - SIMULTANEOUS_HIT_TOLERANCE) {
+        // Impact strictement plus précoce : il remplace les précédents.
+        earliest = hit.time;
+        normalX = 0;
+        normalY = 0;
+      } else if (hit.time > earliest + SIMULTANEOUS_HIT_TOLERANCE) {
+        continue;
+      }
+
+      // Impact simultané : on cumule les normales. Un obus qui entre dans un
+      // angle rentrant touche deux tuiles au même instant et doit repartir
+      // dans la direction opposée, pas le long du mur.
+      if (hit.entryX > hit.entryY + SIMULTANEOUS_HIT_TOLERANCE) {
+        normalX = dx > 0 ? -1 : 1;
+      } else if (hit.entryY > hit.entryX + SIMULTANEOUS_HIT_TOLERANCE) {
+        normalY = dy > 0 ? -1 : 1;
+      } else {
+        // Coin frappé exactement : les deux axes entrent en même temps.
+        normalX = dx > 0 ? -1 : 1;
+        normalY = dy > 0 ? -1 : 1;
+      }
+    }
+  }
+
+  if (!Number.isFinite(earliest)) return null;
+  return { time: earliest, normalX, normalY };
+}

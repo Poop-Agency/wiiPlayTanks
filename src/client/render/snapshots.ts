@@ -14,7 +14,7 @@
  */
 
 import { lerp, lerpAngle } from '@core/math';
-import type { TankColor, World } from '@core/state';
+import type { ShellKind, TankColor, World } from '@core/state';
 
 export interface TankView {
   id: number;
@@ -26,9 +26,19 @@ export interface TankView {
   alive: boolean;
 }
 
+export interface ShellView {
+  id: number;
+  kind: ShellKind;
+  x: number;
+  y: number;
+  /** Orientation du déplacement, pour dessiner un missile dans son axe. */
+  heading: number;
+}
+
 export interface RenderSnapshot {
   tick: number;
   tanks: TankView[];
+  shells: ShellView[];
 }
 
 /** Extrait d'un monde ce qui est nécessaire au rendu. */
@@ -43,6 +53,13 @@ export function captureSnapshot(world: World): RenderSnapshot {
       bodyAngle: tank.bodyAngle,
       turretAngle: tank.turretAngle,
       alive: tank.alive,
+    })),
+    shells: world.shells.map((shell) => ({
+      id: shell.id,
+      kind: shell.kind,
+      x: shell.x,
+      y: shell.y,
+      heading: Math.atan2(shell.vy, shell.vx),
     })),
   };
 }
@@ -59,12 +76,14 @@ export function interpolateSnapshots(
   current: RenderSnapshot,
   alpha: number,
 ): RenderSnapshot {
-  const previousById = new Map(previous.tanks.map((tank) => [tank.id, tank]));
+  const tanksById = new Map(previous.tanks.map((tank) => [tank.id, tank]));
+  const shellsById = new Map(previous.shells.map((shell) => [shell.id, shell]));
 
   return {
     tick: current.tick,
+
     tanks: current.tanks.map((tank) => {
-      const before = previousById.get(tank.id);
+      const before = tanksById.get(tank.id);
       if (!before) return tank;
 
       return {
@@ -75,6 +94,18 @@ export function interpolateSnapshots(
         // tourelle passant de 179° à -179° traverserait tout le cadran.
         bodyAngle: lerpAngle(before.bodyAngle, tank.bodyAngle, alpha),
         turretAngle: lerpAngle(before.turretAngle, tank.turretAngle, alpha),
+      };
+    }),
+
+    shells: current.shells.map((shell) => {
+      const before = shellsById.get(shell.id);
+      if (!before) return shell;
+
+      return {
+        ...shell,
+        x: lerp(before.x, shell.x, alpha),
+        y: lerp(before.y, shell.y, alpha),
+        heading: lerpAngle(before.heading, shell.heading, alpha),
       };
     }),
   };
