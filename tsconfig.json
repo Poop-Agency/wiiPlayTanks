@@ -1,14 +1,36 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "es2020",
-    "outDir": "./public/dist",
-    "rootDir": "./src",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["bun"],
+
+    // Rigueur maximale : la base est neuve, autant ne jamais laisser
+    // s'installer les approximations qui ont pourri la version précédente.
     "strict": true,
-    "moduleResolution": "node",
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    "noEmit": true,
     "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+
+    // Chemins relatifs à ce fichier : `baseUrl` est déprécié depuis TS 7.
+    "paths": {
+      "@core/*": ["./src/core/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@client/*": ["./src/client/*"],
+      "@server/*": ["./src/server/*"]
+    }
   },
-  "include": ["src"]
+  // `legacy/` est volontairement exclu : l'ancien code est conservé comme
+  // référence pour porter les données (niveaux, profils de tanks), pas pour
+  // être compilé.
+  "include": ["src", "tests", "e2e", "vite.config.ts", "playwright.config.ts"],
+  "exclude": ["legacy", "node_modules", "dist"]
 }

@@ -1,0 +1,36 @@
+:root {
+  color-scheme: dark;
+  --board: #2b2118;
+  --ink: #d8c9a8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  background: #14100c;
+  color: var(--ink);
+  font-family: system-ui, sans-serif;
+}
+
+#app {
+  display: grid;
+  place-items: center;
+}
+
+canvas {
+  display: block;
+  max-width: 100vw;
+  max-height: 100vh;
+  /* Rendu net : le jeu est dessiné en pixels logiques, sans lissage parasite. */
+  image-rendering: pixelated;
+}
