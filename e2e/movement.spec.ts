@@ -30,7 +30,7 @@ async function hold(
 }
 
 test('le clavier déplace le tank', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?calme=1');
   await page.waitForTimeout(300);
 
   const before = await tankPosition(page);
@@ -42,24 +42,32 @@ test('le clavier déplace le tank', async ({ page }) => {
 });
 
 test('le tank longe le mur au lieu de s\'y bloquer', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?calme=1');
   await page.waitForTimeout(300);
 
-  const before = await tankPosition(page);
+  const grid = await page.evaluate(() => ({
+    width: window.__tanks!.world.grid.width,
+  }));
 
-  // Poussée en diagonale contre le mur de droite : l'axe X est bloqué, l'axe Y
-  // doit continuer. C'est le comportement que l'ancienne version n'avait pas —
-  // elle rejetait le déplacement entier et le tank se figeait contre le mur.
+  // On se plaque d'abord contre la bordure droite, pour partir d'un contact
+  // franc plutôt que d'une position quelconque.
+  await hold(page, ['KeyD'], 600);
+  const before = await tankPosition(page);
+  expect(before.x).toBeGreaterThan(grid.width - 2);
+
+  // Poussée en diagonale contre ce mur : l'axe X est bloqué, l'axe Y doit
+  // continuer. C'est le comportement que l'ancienne version n'avait pas — elle
+  // rejetait le déplacement entier et le tank se figeait contre le mur.
   await hold(page, ['KeyW', 'KeyD'], 1200);
 
   const after = await tankPosition(page);
 
-  expect(after.x).toBeCloseTo(before.x, 0);
+  expect(after.x).toBeCloseTo(before.x, 1);
   expect(after.y).toBeLessThan(before.y - 1.5);
 });
 
 test('relâcher le focus arrête le tank', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?calme=1');
   await page.waitForTimeout(300);
 
   await page.keyboard.down('KeyW');
@@ -80,7 +88,7 @@ test('relâcher le focus arrête le tank', async ({ page }) => {
 });
 
 test('la souris oriente la tourelle', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?calme=1');
   await page.waitForTimeout(300);
 
   const box = await page.locator('#game').boundingBox();

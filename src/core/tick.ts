@@ -14,6 +14,7 @@
  * dérivaient l'un de l'autre.
  */
 
+import { decideAiInput } from './systems/ai/brain.js';
 import { resolveShellShellHits, resolveShellTankHits } from './systems/damage.js';
 import { removeDoomedMines, updateMineLaying, updateMines } from './systems/mines.js';
 import { updateMovement } from './systems/movement.js';
@@ -59,8 +60,16 @@ export type TickInputs = ReadonlyArray<readonly [tankId: EntityId, input: InputC
  * figé ici, et le test de déterminisme le verrouille.
  */
 export function tick(world: World, inputs: TickInputs): void {
-  // 1. Décisions de l'IA : renseigne les intentions des tanks non joueurs → #11
+  // 1. Décisions de l'IA. Elle produit exactement le même `InputCommand` qu'un
+  //    joueur et passe par les mêmes systèmes : un ennemi ne peut donc pas se
+  //    déplacer plus vite ni tirer plus souvent que ne l'autorisent les règles.
   const intents = new Map(inputs);
+
+  for (const tank of world.tanks) {
+    if (tank.playerId === null && tank.alive && !intents.has(tank.id)) {
+      intents.set(tank.id, decideAiInput(world, tank));
+    }
+  }
 
   // 2. Déplacement des tanks : résolution X puis Y, glissement le long des murs.
   updateMovement(world, intents);

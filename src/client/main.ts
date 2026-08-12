@@ -34,7 +34,10 @@ function mountCanvas(): HTMLCanvasElement {
 const canvas = mountCanvas();
 const renderer = new Canvas2DRenderer(canvas);
 
-const { world, playerTankId } = createSandbox();
+// `?calme=1` vide l'arène de ses ennemis. Sert aux tests bout-en-bout qui
+// mesurent le déplacement ou les mines et n'ont pas à composer avec des tirs.
+const peaceful = new URLSearchParams(window.location.search).has('calme');
+const { world, playerTankId } = createSandbox({ withEnemies: !peaceful });
 const game = new LocalGame(world, playerTankId);
 
 renderer.resize(world.grid);

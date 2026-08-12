@@ -13,8 +13,15 @@ function openWorld(width = 40, height = 30): World {
   return createWorld({ width, height, seed: 1 });
 }
 
+/**
+ * Tank piloté par un joueur.
+ *
+ * `playerId` est explicite : un tank sans joueur est repris par l'IA, qui
+ * l'enverrait esquiver les obus qu'on lui tire dessus — ce qui n'est pas ce
+ * qu'on veut mesurer ici.
+ */
 function addTank(world: World, x: number, y: number, turretAngle = 0): Tank {
-  const tank = createTank(world, { color: 'player', x, y, angle: turretAngle });
+  const tank = createTank(world, { color: 'player', playerId: 'p1', x, y, angle: turretAngle });
   tank.bodyAngle = 0;
   return tank;
 }

@@ -11,6 +11,8 @@ import { blocksShell, boxOverlapsSolid, sweepBoxAgainstGrid } from '../grid.js';
 import { DT, secondsToTicks } from '../tick.js';
 import { TUNING } from '../tuning.js';
 import { allocateEntityId } from '../world.js';
+import { aimErrorFor } from './ai/brain.js';
+import { profileOf } from './ai/profiles.js';
 import type { EntityId, InputCommand, Shell, ShellKind, Tank, World } from '../state.js';
 
 /**
@@ -25,15 +27,6 @@ const MAX_BOUNCES_PER_TICK = 8;
 /** Écart laissé entre l'obus et le mur après un rebond. */
 const SEPARATION_EPSILON = 1e-6;
 
-/** Caractéristiques de tir, fournies par le profil du tank (#11). */
-export interface ShellSpec {
-  kind: ShellKind;
-  bounces: number;
-}
-
-/** Le joueur tire des obus normaux à un rebond, comme dans l'original. */
-const PLAYER_SHELL: ShellSpec = { kind: 'normal', bounces: 1 };
-
 /** Vitesse associée à un type d'obus, en tuiles par seconde. */
 export function shellSpeed(kind: ShellKind): number {
   return kind === 'fast'
@@ -44,16 +37,27 @@ export function shellSpeed(kind: ShellKind): number {
 /**
  * Fait tirer un tank, si son quota et son rechargement le permettent.
  *
+ * Le type d'obus, le nombre de rebonds et le quota viennent du profil de la
+ * couleur : un tank vert tire des missiles à deux rebonds, un noir des missiles
+ * sans rebond, sans qu'aucun `switch` n'apparaisse ici.
+ *
  * @returns l'obus créé, ou `null` si le tir a été refusé
  */
-export function fireShell(world: World, tank: Tank, spec: ShellSpec = PLAYER_SHELL): Shell | null {
+export function fireShell(world: World, tank: Tank): Shell | null {
   if (!tank.alive) return null;
   if (tank.reloadTicks > 0) return null;
-  if (tank.activeShells >= TUNING.tank.maxActiveShells) return null;
 
-  const speed = shellSpeed(spec.kind);
-  const dirX = Math.cos(tank.turretAngle);
-  const dirY = Math.sin(tank.turretAngle);
+  const profile = profileOf(tank.color);
+  if (tank.activeShells >= profile.maxActiveShells) return null;
+
+  const speed = shellSpeed(profile.shellKind);
+
+  // Le cône d'erreur s'applique ici, au moment du tir, et non à l'orientation
+  // de la tourelle : appliqué en continu, il ferait trembler le canon à
+  // l'écran au lieu de disperser les tirs.
+  const angle = tank.turretAngle + aimErrorFor(world, tank);
+  const dirX = Math.cos(angle);
+  const dirY = Math.sin(angle);
 
   // L'obus naît au bout du canon. Si ce point tombe dans un mur — canon collé
   // contre un bloc — on le fait naître au centre du tank : le faire apparaître
@@ -74,12 +78,12 @@ export function fireShell(world: World, tank: Tank, spec: ShellSpec = PLAYER_SHE
   const shell: Shell = {
     id: allocateEntityId(world),
     ownerId: tank.id,
-    kind: spec.kind,
+    kind: profile.shellKind,
     x,
     y,
     vx: dirX * speed,
     vy: dirY * speed,
-    bouncesLeft: spec.bounces,
+    bouncesLeft: profile.shellBounces,
     // L'obus part désarmé : il chevauche encore son tireur.
     armed: false,
   };

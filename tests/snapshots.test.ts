@@ -31,6 +31,7 @@ describe('capture', () => {
       'color',
       'id',
       'turretAngle',
+      'visible',
       'x',
       'y',
     ]);

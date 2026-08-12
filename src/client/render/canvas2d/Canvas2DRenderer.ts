@@ -79,7 +79,7 @@ export class Canvas2DRenderer implements Renderer {
     }
 
     for (const tank of view.tanks) {
-      if (tank.alive) this.#drawTank(tank);
+      if (tank.alive && tank.visible) this.#drawTank(tank);
     }
 
     // Les obus par-dessus les tanks : c'est ce qu'on doit suivre des yeux.

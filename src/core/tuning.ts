@@ -125,7 +125,10 @@ export const TUNING: Tuning = {
     // Environ un demi-tour en un tiers de seconde : le corps s'oriente vite
     // sans donner l'impression de pivoter instantanément.
     turnRateRadiansPerSecond: Math.PI * 3,
+    // 5, et non le 4 que fixait `legacy/src/game.ts` : cette valeur-là était un
+    // choix d'implémentation, pas un relevé.
     maxActiveShells: 5,
+    // ⚠ Non mesuré — voir la section `mine` plus bas.
     maxActiveMines: 2,
   },
   shell: {
@@ -134,6 +137,17 @@ export const TUNING: Tuning = {
     fastSpeedTilesPerSecond: speedFromCrossing(SHELL_CROSSING_SECONDS) * 2,
     cooldownSeconds: 0.2,
   },
+  // ⚠ SECTION NON MESURÉE — en attente de relevé sur le jeu original.
+  //
+  // Contrairement à tout le reste de ce fichier, ces valeurs ne dérivent
+  // d'aucune mesure : les mines n'ayant jamais été implémentées dans la version
+  // précédente, il n'y avait rien à en extraire. Ce sont des estimations.
+  //
+  // À relever, par la même méthode que les vitesses (comptage d'images) :
+  //   · fuseSeconds      → temps entre la pose et l'explosion
+  //   · blastRadiusTiles → portée du souffle, en nombre de blocs détruits
+  //   · cooldownSeconds  → délai minimal observé entre deux poses
+  // Et à confirmer : le nombre de mines simultanées (`tank.maxActiveMines`).
   mine: {
     fuseSeconds: 3,
     // Deux tuiles : de quoi ouvrir un passage franc dans un mur cassable, ce
