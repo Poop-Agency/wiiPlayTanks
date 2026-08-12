@@ -34,10 +34,10 @@ import type { EnemySpawn, ParsedMission, SpawnPoint } from '../src/shared/missio
 
 /* ── Effectifs relevés dans l'ancienne version ──────────────────────────────
  *
- * Transcrits depuis les listes `enemies` de `legacy/src/level.ts`, telles que
- * les restitue `scripts/convert-legacy-levels.ts`. C'est la seule donnée de
- * progression que l'ancienne version contenait pour les vingt missions : les
- * tracés, eux, manquaient à partir de la troisième.
+ * Transcrits depuis les listes `enemies` de l'ancienne version, telles que les
+ * restitue le relevé de `docs/provenance.md`. C'est la seule donnée de
+ * progression qu'elle contenait pour les vingt missions : les tracés, eux,
+ * manquaient à partir de la troisième.
  *
  * La couleur `grey` y est devenue `ash`, seul renommage.
  * ────────────────────────────────────────────────────────────────────────── */

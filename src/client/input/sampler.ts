@@ -5,13 +5,15 @@
  * {@link InputCommand} — la seule chose que la simulation accepte, et la seule
  * chose qui partira sur le réseau en multijoueur (#13).
  *
- * C'est délibérément la seule couche qui connaisse le clavier et la souris : la
- * simulation, elle, ne sait pas d'où viennent les intentions qu'elle applique.
+ * C'est délibérément la seule couche qui connaisse le clavier, la souris et la
+ * manette : la simulation, elle, ne sait pas d'où viennent les intentions
+ * qu'elle applique.
  */
 
 import type { InputCommand } from '@core/state';
 import { KEY_BINDINGS, MOUSE_BINDINGS } from './bindings';
 import type { GameAction } from './bindings';
+import { readGamepad } from './gamepad';
 
 /** Convertit une position de pointeur en coordonnées monde. */
 export type PointerToWorld = (clientX: number, clientY: number) => { x: number; y: number };
@@ -72,15 +74,22 @@ export class InputSampler {
     // Les directions ne sont pas verrouillées : un déplacement est un état
     // maintenu, pas un évènement. Le verrouiller ferait avancer le tank d'un
     // pas fantôme après le relâchement.
-    const moveX = (this.#active.has('right') ? 1 : 0) - (this.#active.has('left') ? 1 : 0);
-    const moveY = (this.#active.has('down') ? 1 : 0) - (this.#active.has('up') ? 1 : 0);
+    const keyboardX = (this.#active.has('right') ? 1 : 0) - (this.#active.has('left') ? 1 : 0);
+    const keyboardY = (this.#active.has('down') ? 1 : 0) - (this.#active.has('up') ? 1 : 0);
 
+    // L'état d'une manette n'est pas évènementiel : il faut l'interroger.
+    const pad = readGamepad();
+
+    // Fusion et non substitution : sinon brancher une manette désactiverait le
+    // clavier, et la débrancher figerait le tank sur sa dernière intention.
     const command: InputCommand = {
-      moveX,
-      moveY,
-      aim: Math.atan2(this.#aimY - this.#originY, this.#aimX - this.#originX),
-      fire: held('fire'),
-      mine: held('mine'),
+      moveX: keyboardX !== 0 ? keyboardX : pad.moveX,
+      moveY: keyboardY !== 0 ? keyboardY : pad.moveY,
+      // Le stick droit prend la main quand il est sorti de sa zone morte ; au
+      // repos, la souris reprend, exactement comme le pointeur de la Wiimote.
+      aim: pad.aim ?? Math.atan2(this.#aimY - this.#originY, this.#aimX - this.#originX),
+      fire: held('fire') || pad.fire,
+      mine: held('mine') || pad.mine,
     };
 
     this.#pressedSinceSample.clear();

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { waitForGame } from './helpers';
+
 // La déclaration de `window.__tanks` vit dans src/client/debug-bridge.ts.
 import '../src/client/debug-bridge';
 
@@ -29,7 +31,7 @@ async function hold(page: Page, keys: string[], milliseconds: number): Promise<v
 
 test('un clic droit bref pose bien une mine', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   expect((await survey(page)).mines).toBe(0);
 
@@ -45,7 +47,7 @@ test('un clic droit bref pose bien une mine', async ({ page }) => {
 
 test('la mine perce la barrière cassable et ouvre le passage', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   const start = await survey(page);
 
@@ -90,7 +92,7 @@ test('la mine perce la barrière cassable et ouvre le passage', async ({ page })
 
 test('rester sur sa propre mine est fatal', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
-  await page.waitForTimeout(300);
+  await waitForGame(page);
 
   await page.mouse.click(300, 300, { button: 'right' });
   await page.waitForTimeout(100);

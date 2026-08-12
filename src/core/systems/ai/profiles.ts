@@ -3,9 +3,10 @@
  *
  * ─── Provenance ──────────────────────────────────────────────────────────────
  *
- * Tout ce fichier est transcrit depuis `legacy/src/constants.ts` et
- * `legacy/src/enemy.ts`, où ces valeurs avaient été relevées sur le jeu
- * original. Rien n'y est inventé, à deux exceptions signalées sur place.
+ * Tout ce fichier est transcrit depuis l'ancienne version — `constants.ts` et
+ * `enemy.ts` — où ces valeurs avaient été relevées sur le jeu original. Rien
+ * n'y est inventé, à deux exceptions signalées sur place. Le détail de
+ * l'extraction est figé dans `docs/provenance.md`.
  *
  * Deux conversions ont été nécessaires :
  *

@@ -32,6 +32,7 @@ Le mode solo n'est pas un chemin de code à part : `client/local/` instancie en
 mémoire le même salon que le serveur, avec le même `tick()`. Il ne peut donc pas
 diverger du mode en ligne.
 
-L'ancienne implémentation est conservée dans `legacy/` à la racine — elle sert de
-référence pour porter les données (tracés des missions, caractéristiques des tanks)
-et n'est ni compilée ni importée.
+L'ancienne implémentation a été supprimée après extraction de ses données. Ce
+qui en a été tiré — mesures de vitesse, caractéristiques des tanks, effectifs des
+vingt missions — est figé dans `docs/provenance.md` ; le code lui-même reste
+consultable dans l'historique git.

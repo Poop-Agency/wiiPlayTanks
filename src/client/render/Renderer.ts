@@ -12,6 +12,7 @@
 
 import type { Grid, World } from '@core/state';
 import type { DebugOptions } from '../ui/tuning-panel';
+import type { EffectsView } from './effects';
 import type { RenderSnapshot } from './snapshots';
 
 export interface Renderer {
@@ -27,8 +28,14 @@ export interface Renderer {
    */
   invalidateTerrain(): void;
 
-  /** Dessine une frame. */
-  draw(grid: Grid, view: RenderSnapshot): void;
+  /**
+   * Dessine une frame.
+   *
+   * `effects` est purement décoratif — traces, débris, étincelles — et n'a
+   * aucune incidence sur la simulation. Il est passé à part de l'instantané
+   * parce qu'il ne se déduit pas du monde : il vit côté client, et lui seul.
+   */
+  draw(grid: Grid, view: RenderSnapshot, effects?: EffectsView): void;
 
   /**
    * Superpose les calques de débogage demandés par le panneau de calibration.

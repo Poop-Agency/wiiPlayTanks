@@ -178,3 +178,132 @@ canvas {
 body.panneau-ouvert {
   padding-right: min(360px, 100vw);
 }
+
+/* ─── Écran-titre ─────────────────────────────────────────────────────────
+ *
+ * Il recouvre la page tant qu'aucun mode n'est choisi : rien ne tourne
+ * derrière, la partie ne démarre qu'à la navigation.
+ */
+
+.ecran-titre {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: radial-gradient(circle at 50% 30%, #2b2118 0%, #14100c 70%);
+}
+
+.ecran-titre-carte {
+  width: min(560px, 100%);
+  padding: 28px 32px 32px;
+  background: #1b1510;
+  border: 1px solid #3a2e22;
+  border-radius: 6px;
+}
+
+.ecran-titre h1 {
+  margin: 0;
+  font-size: 44px;
+  letter-spacing: 0.14em;
+  color: #e8c98a;
+}
+
+.ecran-titre-sous-titre {
+  margin: 4px 0 24px;
+  color: #9c8b70;
+  font-size: 13px;
+}
+
+.ecran-titre h2 {
+  margin: 20px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #3a2e22;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b9a98c;
+}
+
+.ecran-titre-note {
+  margin: 0 0 10px;
+  color: #9c8b70;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ecran-titre-ligne {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ecran-titre label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9c8b70;
+  font-size: 12px;
+}
+
+.ecran-titre input {
+  padding: 7px 9px;
+  background: #241c14;
+  color: var(--ink);
+  border: 1px solid #3a2e22;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.ecran-titre input[type='number'] {
+  width: 68px;
+}
+
+.ecran-titre button {
+  padding: 8px 16px;
+  background: #3a2e22;
+  color: var(--ink);
+  border: 1px solid #564534;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ecran-titre button:hover {
+  background: #4a3b2c;
+}
+
+.ecran-titre button.principal {
+  background: #4a90d9;
+  border-color: #6aa8e6;
+  color: #0f1720;
+  font-weight: 600;
+}
+
+.ecran-titre button.principal:hover {
+  background: #5b9ee2;
+}
+
+/* Deux colonnes : la touche à gauche, ce qu'elle fait à droite. */
+.ecran-titre-aide dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.ecran-titre-aide dt {
+  color: #e8dcc0;
+  font-family: ui-monospace, monospace;
+}
+
+.ecran-titre-aide dd {
+  margin: 0;
+  color: #9c8b70;
+}
