@@ -1,22 +1,31 @@
 /**
  * Point d'entrée du client.
  *
- * Assemble les quatre couches et rien de plus : entrées → simulation → rendu,
- * cadencées par la boucle à pas fixe. Aucune logique de jeu ici.
+ * Assemble les couches et rien de plus : entrées → simulation → rendu → HUD,
+ * cadencées par la boucle à pas fixe. Aucune logique de jeu ici — c'est la
+ * {@link Session} qui la porte, et c'est ce qui permettra de brancher la
+ * session réseau de #13 sans toucher à ce fichier.
  *
- * À ce stade (#7) on peut piloter un tank dans un labyrinthe. Les tirs arrivent
- * en #8, les mines en #9, les ennemis en #11.
+ * ─── Modes ───────────────────────────────────────────────────────────────────
+ *
+ *   (aucun paramètre)  la campagne, à partir de la mission 1
+ *   ?mission=N         la campagne, à partir de la mission N
+ *   ?bac=1             le terrain d'essai des tests bout-en-bout
+ *   ?bac=1&calme=1     le même, sans ennemis
  */
 
 import { TICK_RATE } from '@core/tick';
 import { TUNING } from '@core/tuning';
+import { CAMPAIGN_LENGTH } from '@shared/campaign';
 import { exposeDebugBridge } from './debug-bridge';
-import type { RateProbe } from './debug-bridge';
+import type { RateProbe, TanksDebugBridge } from './debug-bridge';
 import { InputSampler } from './input/sampler';
-import { LocalGame } from './local/LocalGame';
-import { createSandbox } from './local/sandbox';
+import { LocalCampaign } from './local/LocalCampaign';
+import { createSandboxSession } from './local/sandbox';
 import { startGameLoop } from './loop';
-import { Canvas2DRenderer } from './render/canvas2d/Canvas2DRenderer';
+import { BOARD_BOTTOM_BAND_PX, Canvas2DRenderer } from './render/canvas2d/Canvas2DRenderer';
+import type { Session } from './session';
+import { drawHud } from './ui/hud';
 
 /**
  * Récupère le canevas.
@@ -31,20 +40,41 @@ function mountCanvas(): HTMLCanvasElement {
   return canvas;
 }
 
+/** Numéro de mission demandé dans l'URL, ramené dans les bornes de la campagne. */
+function requestedMission(params: URLSearchParams): number {
+  const raw = Number(params.get('mission'));
+  if (!Number.isInteger(raw)) return 1;
+  return Math.min(Math.max(raw, 1), CAMPAIGN_LENGTH);
+}
+
+function createSession(params: URLSearchParams): Session {
+  if (params.has('bac')) {
+    return createSandboxSession({ withEnemies: !params.has('calme') });
+  }
+  return new LocalCampaign(requestedMission(params));
+}
+
 const canvas = mountCanvas();
 const renderer = new Canvas2DRenderer(canvas);
 
-// `?calme=1` vide l'arène de ses ennemis. Sert aux tests bout-en-bout qui
-// mesurent le déplacement ou les mines et n'ont pas à composer avec des tirs.
-const peaceful = new URLSearchParams(window.location.search).has('calme');
-const { world, playerTankId } = createSandbox({ withEnemies: !peaceful });
-const game = new LocalGame(world, playerTankId);
+const params = new URLSearchParams(window.location.search);
+const session = createSession(params);
 
-renderer.resize(world.grid);
+renderer.resize(session.world.grid);
 
 const sampler = new InputSampler(canvas, (clientX, clientY) =>
   renderer.pointerToWorld(clientX, clientY),
 );
+
+// Reprendre une campagne perdue ou terminée n'est pas une intention de jeu :
+// ça ne passe donc pas par `InputCommand`, qui est ce qui partira sur le
+// réseau. C'est une action d'interface, et elle reste ici.
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Enter') return;
+
+  const status = session.status();
+  if (status && status.status !== 'playing') session.restart();
+});
 
 /** Diagnostic de cadence, affiché en surimpression. Sans effet sur la simulation. */
 const rates: RateProbe = {
@@ -68,35 +98,43 @@ function sampleRates(nowMs: number): void {
   rates.windowStartMs = nowMs;
 }
 
-function drawOverlay(ctx: CanvasRenderingContext2D): void {
-  const tank = game.playerTank;
-  const shells = tank ? `${tank.activeShells}/${TUNING.tank.maxActiveShells}` : '—';
-  const mines = tank ? `${tank.activeMines}/${TUNING.tank.maxActiveMines}` : '—';
-  const status = tank?.alive === false ? '  — DÉTRUIT' : '';
-
-  const lines = [
-    `pas/s ${rates.ticksPerSecond} (attendu ${TICK_RATE})   frames/s ${rates.framesPerSecond}`,
-    `obus ${shells}   mines ${mines}${status}`,
-    'ZQSD / WASD / flèches — souris pour viser, clic gauche tirer, clic droit miner',
-  ];
-
-  // En bas de l'image : le bandeau ne doit pas masquer le terrain de jeu.
-  // Provisoire — le vrai HUD arrive en #12, le panneau de réglages en #10.
-  const height = 18 * lines.length + 10;
-  const top = ctx.canvas.height - height - 8;
+/**
+ * Bandeau de diagnostic.
+ *
+ * Il occupe la bande que le renderer réserve sous le plateau, et ne recouvre
+ * donc aucune tuile.
+ */
+function drawDiagnostics(ctx: CanvasRenderingContext2D): void {
+  const top = ctx.canvas.height - BOARD_BOTTOM_BAND_PX;
 
   ctx.save();
-  ctx.fillStyle = 'rgba(20, 14, 8, 0.55)';
-  ctx.fillRect(8, top, 400, height);
+  ctx.fillStyle = 'rgba(28, 20, 12, 0.72)';
+  ctx.fillRect(0, top, ctx.canvas.width, BOARD_BOTTOM_BAND_PX);
 
-  ctx.fillStyle = '#e8dcc0';
-  ctx.font = '12px ui-monospace, monospace';
-  ctx.textBaseline = 'top';
-  lines.forEach((line, index) => ctx.fillText(line, 18, top + 6 + index * 18));
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.textBaseline = 'middle';
+
+  const middle = top + BOARD_BOTTOM_BAND_PX / 2;
+
+  ctx.fillStyle = '#b9a98c';
+  ctx.textAlign = 'left';
+  ctx.fillText('ZQSD · souris viser · clic tirer · clic droit miner', 14, middle);
+
+  // À droite, et volontairement court : les deux textes partagent une bande de
+  // la largeur du plateau, et se chevauchaient dès que l'un des deux s'allongeait.
+  ctx.textAlign = 'right';
+  ctx.fillText(
+    `${rates.ticksPerSecond} pas/s (${TICK_RATE} attendus) · ${rates.framesPerSecond} img/s`,
+    ctx.canvas.width - 14,
+    middle,
+  );
   ctx.restore();
 }
 
 const overlayCtx = canvas.getContext('2d');
+
+const bridge: TanksDebugBridge = { world: session.world, rates, tuning: TUNING };
+exposeDebugBridge(bridge);
 
 startGameLoop({
   update(): void {
@@ -104,19 +142,28 @@ startGameLoop({
 
     // La visée se recalcule depuis la position courante du tank : un pointeur
     // immobile au-dessus d'un tank qui se déplace doit rester visé.
-    const tank = game.playerTank;
+    const tank = session.playerTank;
     if (tank) sampler.setAimOrigin(tank.x, tank.y);
 
-    game.update(sampler.sample());
+    session.update(sampler.sample());
+
+    // La campagne remplace son monde à chaque mission : la passerelle doit
+    // suivre, sinon les tests bout-en-bout observeraient la mission précédente.
+    bridge.world = session.world;
+    const status = session.status();
+    if (status) bridge.campaign = status;
   },
 
   render(alpha): void {
     rates.frames++;
     sampleRates(performance.now());
 
-    renderer.draw(world.grid, game.view(alpha));
-    if (overlayCtx) drawOverlay(overlayCtx);
+    renderer.draw(session.world.grid, session.view(alpha));
+
+    if (overlayCtx) {
+      const status = session.status();
+      if (status) drawHud(overlayCtx, status);
+      drawDiagnostics(overlayCtx);
+    }
   },
 });
-
-exposeDebugBridge({ world, rates, tuning: TUNING });

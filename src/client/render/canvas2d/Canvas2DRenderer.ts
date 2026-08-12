@@ -23,6 +23,20 @@ import type {
 /** Décalage vertical des faces de blocs, qui simule leur épaisseur. */
 const BLOCK_RELIEF_PX = 5;
 
+/**
+ * Bandes réservées au-dessus et au-dessous du plateau, en pixels.
+ *
+ * Le HUD et le bandeau de diagnostic ont leur propre place plutôt que d'être
+ * peints par-dessus le jeu : superposés, ils masquaient le mur d'enceinte
+ * supérieur et l'arène semblait ouverte en haut.
+ *
+ * Elles sont réservées en permanence, y compris sur le terrain d'essai qui n'a
+ * pas de HUD : une hauteur de canevas qui dépend de ce qu'on affiche dessus
+ * ferait sauter le plateau d'une taille à l'autre.
+ */
+export const BOARD_TOP_BAND_PX = 38;
+export const BOARD_BOTTOM_BAND_PX = 46;
+
 export class Canvas2DRenderer implements Renderer {
   readonly #canvas: HTMLCanvasElement;
   readonly #ctx: CanvasRenderingContext2D;
@@ -31,6 +45,18 @@ export class Canvas2DRenderer implements Renderer {
   #terrain: HTMLCanvasElement | null = null;
   #terrainStale = true;
   #terrainVersion = -1;
+
+  /**
+   * Grille effectivement dessinée dans le cache.
+   *
+   * Le numéro de version seul ne suffit pas : deux grilles **différentes**
+   * peuvent porter le même numéro. C'est le cas de deux missions consécutives,
+   * qui commencent toutes deux à zéro — le terrain de la précédente resterait
+   * affiché jusqu'à la première destruction de bloc. La comparaison
+   * d'identité ferme ce trou une fois pour toutes, plutôt que d'obliger chaque
+   * appelant à penser à signaler le changement.
+   */
+  #terrainGrid: Grid | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -42,7 +68,7 @@ export class Canvas2DRenderer implements Renderer {
 
   resize(grid: Grid): void {
     this.#canvas.width = grid.width * TILE_SIZE_PX;
-    this.#canvas.height = grid.height * TILE_SIZE_PX;
+    this.#canvas.height = grid.height * TILE_SIZE_PX + BOARD_TOP_BAND_PX + BOARD_BOTTOM_BAND_PX;
     this.#terrainStale = true;
   }
 
@@ -60,16 +86,26 @@ export class Canvas2DRenderer implements Renderer {
 
     return {
       x: ((clientX - bounds.left) * scaleX) / TILE_SIZE_PX,
-      y: ((clientY - bounds.top) * scaleY) / TILE_SIZE_PX,
+      // Le plateau commence sous la bande du HUD : sans ce retrait, la visée
+      // serait décalée d'une tuile vers le haut sur toute la hauteur.
+      y: ((clientY - bounds.top) * scaleY - BOARD_TOP_BAND_PX) / TILE_SIZE_PX,
     };
   }
 
   draw(grid: Grid, view: RenderSnapshot): void {
     // Le cache se reconstruit sur changement de version plutôt que sur appel
     // explicite : personne ne peut oublier de signaler une destruction de bloc.
-    if (this.#terrainStale || grid.version !== this.#terrainVersion) {
+    if (this.#terrainStale || grid !== this.#terrainGrid || grid.version !== this.#terrainVersion) {
       this.#buildTerrain(grid);
     }
+
+    this.#ctx.clearRect(0, 0, this.#canvas.width, this.#canvas.height);
+
+    // Une seule translation pour tout le plateau : chaque primitive continue de
+    // raisonner en coordonnées monde, sans jamais avoir à connaître la bande.
+    this.#ctx.save();
+    this.#ctx.translate(0, BOARD_TOP_BAND_PX);
+
     if (this.#terrain) this.#ctx.drawImage(this.#terrain, 0, 0);
 
     // Les mines au sol, sous tout le reste : un tank posé dessus doit rester
@@ -91,6 +127,8 @@ export class Canvas2DRenderer implements Renderer {
     for (const explosion of view.explosions) {
       this.#drawExplosion(explosion);
     }
+
+    this.#ctx.restore();
   }
 
   /* ── Terrain ─────────────────────────────────────────────────────────── */
@@ -131,6 +169,7 @@ export class Canvas2DRenderer implements Renderer {
     this.#terrain = canvas;
     this.#terrainStale = false;
     this.#terrainVersion = grid.version;
+    this.#terrainGrid = grid;
   }
 
   #drawFloor(ctx: CanvasRenderingContext2D, grid: Grid): void {

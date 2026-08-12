@@ -13,6 +13,7 @@
 
 import type { World } from '@core/state';
 import type { Tuning } from '@core/tuning';
+import type { CampaignView } from './local/LocalCampaign';
 
 /** Cadences mesurées, pour vérifier que la simulation reste indépendante de l'écran. */
 export interface RateProbe {
@@ -24,6 +25,13 @@ export interface RateProbe {
 }
 
 export interface TanksDebugBridge {
+  /**
+   * Monde en cours.
+   *
+   * Réaffecté à chaque changement de mission : la campagne enchaîne des mondes
+   * distincts, elle n'en recycle pas un seul. Un test qui garde une référence
+   * d'un pas sur l'autre observerait donc la mission précédente.
+   */
   world: World;
   rates: RateProbe;
   /**
@@ -31,6 +39,8 @@ export interface TanksDebugBridge {
    * des valeurs, et le panneau de calibration (#10) l'éditera en place.
    */
   tuning: Tuning;
+  /** État de la campagne. Absent en mode bac à sable. */
+  campaign?: CampaignView;
 }
 
 declare global {
