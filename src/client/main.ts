@@ -1,51 +1,49 @@
 /**
  * Point d'entrée du client.
  *
- * À ce stade (issue #6) il n'y a pas encore de gameplay : ce qui tourne ici est
- * la boucle à pas fixe, et l'affichage sert de vérification visuelle.
+ * Assemble les quatre couches et rien de plus : entrées → simulation → rendu,
+ * cadencées par la boucle à pas fixe. Aucune logique de jeu ici.
  *
- * Le compteur de pas par seconde doit rester collé à 60 quelle que soit la
- * fréquence de l'écran. C'est exactement ce que l'ancienne version ne faisait
- * pas : elle avançait d'un pas par frame, donc 144 pas par seconde sur un écran
- * 144 Hz. Ouvrir cette page sur un écran haute fréquence est le test à l'oeil
- * nu de la correction.
- *
- * Le rendu du terrain arrive en #7.
+ * À ce stade (#7) on peut piloter un tank dans un labyrinthe. Les tirs arrivent
+ * en #8, les mines en #9, les ennemis en #11.
  */
 
-import { TICK_RATE, tick } from '@core/tick';
-import type { TickInputs } from '@core/tick';
-import { createWorld } from '@core/world';
+import { TICK_RATE } from '@core/tick';
+import { exposeDebugBridge } from './debug-bridge';
+import type { RateProbe } from './debug-bridge';
+import { InputSampler } from './input/sampler';
+import { LocalGame } from './local/LocalGame';
+import { createSandbox } from './local/sandbox';
 import { startGameLoop } from './loop';
+import { Canvas2DRenderer } from './render/canvas2d/Canvas2DRenderer';
 
 /**
- * Récupère le canevas et son contexte.
+ * Récupère le canevas.
  *
  * Passer par une fonction au type de retour explicite plutôt que par des
  * `const` en portée de module : le rétrécissement de type après un `if (!x)
- * throw` ne traverse pas les frontières de fonction, et tous les usages dans
- * `render()` redeviendraient nullables.
+ * throw` ne traverse pas les frontières de fonction.
  */
-function mountCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+function mountCanvas(): HTMLCanvasElement {
   const canvas = document.querySelector<HTMLCanvasElement>('#game');
   if (!canvas) throw new Error('Canevas #game introuvable dans index.html');
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Contexte 2D indisponible : le navigateur ne supporte pas Canvas');
-
-  return { canvas, ctx };
+  return canvas;
 }
 
-const { canvas, ctx } = mountCanvas();
+const canvas = mountCanvas();
+const renderer = new Canvas2DRenderer(canvas);
 
-canvas.width = 800;
-canvas.height = 600;
+const { world, playerTankId } = createSandbox();
+const game = new LocalGame(world, playerTankId);
 
-const world = createWorld({ width: 25, height: 19, seed: 1 });
-const NO_INPUTS: TickInputs = [];
+renderer.resize(world.grid);
 
-/** Mesure séparée des deux cadences, pour rendre l'écart visible s'il réapparaît. */
-const rates = {
+const sampler = new InputSampler(canvas, (clientX, clientY) =>
+  renderer.pointerToWorld(clientX, clientY),
+);
+
+/** Diagnostic de cadence, affiché en surimpression. Sans effet sur la simulation. */
+const rates: RateProbe = {
   ticks: 0,
   frames: 0,
   ticksPerSecond: 0,
@@ -53,10 +51,6 @@ const rates = {
   windowStartMs: 0,
 };
 
-/**
- * Le seul endroit du client autorisé à lire l'horloge murale : la mesure de
- * diagnostic. La simulation, elle, ne connaît que `world.tick`.
- */
 function sampleRates(nowMs: number): void {
   if (rates.windowStartMs === 0) rates.windowStartMs = nowMs;
 
@@ -70,50 +64,49 @@ function sampleRates(nowMs: number): void {
   rates.windowStartMs = nowMs;
 }
 
-function render(alpha: number): void {
-  rates.frames++;
-  sampleRates(performance.now());
-
-  ctx.fillStyle = '#2b2118';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = '#d8c9a8';
-  ctx.font = '14px ui-monospace, monospace';
-  ctx.textAlign = 'left';
-
+function drawOverlay(ctx: CanvasRenderingContext2D): void {
   const lines = [
-    `pas de simulation   ${world.tick}`,
-    `pas / seconde       ${rates.ticksPerSecond} (attendu ${TICK_RATE})`,
-    `frames / seconde    ${rates.framesPerSecond}`,
-    `résidu alpha        ${alpha.toFixed(3)}`,
-    `grille              ${world.grid.width} × ${world.grid.height} tuiles`,
+    `pas/s ${rates.ticksPerSecond} (attendu ${TICK_RATE})   frames/s ${rates.framesPerSecond}`,
+    'ZQSD ou WASD ou flèches — souris pour viser',
   ];
 
-  lines.forEach((line, index) => {
-    ctx.fillText(line, 24, 40 + index * 22);
-  });
+  // En bas de l'image : le bandeau ne doit pas masquer le terrain de jeu.
+  // Provisoire — le vrai HUD arrive en #12, le panneau de réglages en #10.
+  const height = 18 * lines.length + 10;
+  const top = ctx.canvas.height - height - 8;
 
-  ctx.fillStyle = '#6f6350';
-  ctx.fillText(
-    'La cadence de simulation doit rester à 60 quelle que soit celle de l’écran.',
-    24,
-    40 + lines.length * 22 + 16,
-  );
+  ctx.save();
+  ctx.fillStyle = 'rgba(20, 14, 8, 0.55)';
+  ctx.fillRect(8, top, 400, height);
+
+  ctx.fillStyle = '#e8dcc0';
+  ctx.font = '12px ui-monospace, monospace';
+  ctx.textBaseline = 'top';
+  lines.forEach((line, index) => ctx.fillText(line, 18, top + 6 + index * 18));
+  ctx.restore();
 }
+
+const overlayCtx = canvas.getContext('2d');
 
 startGameLoop({
   update(): void {
     rates.ticks++;
-    tick(world, NO_INPUTS);
+
+    // La visée se recalcule depuis la position courante du tank : un pointeur
+    // immobile au-dessus d'un tank qui se déplace doit rester visé.
+    const tank = game.playerTank;
+    if (tank) sampler.setAimOrigin(tank.x, tank.y);
+
+    game.update(sampler.sample());
   },
-  render,
+
+  render(alpha): void {
+    rates.frames++;
+    sampleRates(performance.now());
+
+    renderer.draw(world.grid, game.view(alpha));
+    if (overlayCtx) drawOverlay(overlayCtx);
+  },
 });
 
-// Exposé pour les tests bout-en-bout, qui n'ont aucun DOM à interroger : le jeu
-// vit entièrement dans le canevas.
-declare global {
-  interface Window {
-    __tanks?: { world: typeof world; rates: typeof rates };
-  }
-}
-window.__tanks = { world, rates };
+exposeDebugBridge({ world, rates });
