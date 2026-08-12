@@ -5,7 +5,7 @@ import { TileKind } from '../src/core/state.js';
 import type { InputCommand, World } from '../src/core/state.js';
 import { DT, TICK_RATE, secondsToTicks, tick } from '../src/core/tick.js';
 import type { TickInputs } from '../src/core/tick.js';
-import { allocateEntityId, cloneWorld, createWorld, hashWorld } from '../src/core/world.js';
+import { allocateEntityId, cloneWorld, createTank, createWorld, hashWorld } from '../src/core/world.js';
 
 /**
  * Le déterminisme n'est pas un détail de propreté : c'est ce qui permet au
@@ -21,19 +21,8 @@ import { allocateEntityId, cloneWorld, createWorld, hashWorld } from '../src/cor
 function makeWorld(seed = 12_345): World {
   const world = createWorld({ width: 20, height: 15, seed });
 
-  world.tanks.push({
-    id: allocateEntityId(world),
-    color: 'player',
-    playerId: 'p1',
-    x: 3.5,
-    y: 3.5,
-    bodyAngle: 0,
-    turretAngle: 0,
-    alive: true,
-    activeShells: 0,
-    activeMines: 0,
-    reloadTicks: 7,
-  });
+  const tank = createTank(world, { color: 'player', playerId: 'p1', x: 3.5, y: 3.5 });
+  tank.reloadTicks = 7;
 
   world.mines.push({
     id: allocateEntityId(world),
@@ -49,6 +38,7 @@ function makeWorld(seed = 12_345): World {
     y: 8,
     radius: 2,
     ticksLeft: 3,
+    totalTicks: 3,
   });
 
   return world;
@@ -138,22 +128,16 @@ describe('empreinte du monde', () => {
   test("l'empreinte ne dépend pas de l'ordre d'insertion des propriétés", () => {
     const world = makeWorld();
 
-    // Même contenu, propriétés énumérées dans un autre ordre.
+    // Même contenu, propriétés énumérées dans l'ordre inverse. Construit par
+    // réflexion plutôt qu'à la main : le test resterait sinon à recopier à
+    // chaque champ ajouté au tank, et cesserait silencieusement de couvrir les
+    // nouveaux.
     const reordered = cloneWorld(world);
     const tank = reordered.tanks[0]!;
-    reordered.tanks[0] = {
-      reloadTicks: tank.reloadTicks,
-      activeMines: tank.activeMines,
-      activeShells: tank.activeShells,
-      alive: tank.alive,
-      turretAngle: tank.turretAngle,
-      bodyAngle: tank.bodyAngle,
-      y: tank.y,
-      x: tank.x,
-      playerId: tank.playerId,
-      color: tank.color,
-      id: tank.id,
-    };
+    const reversed = Object.fromEntries(
+      Object.entries(tank).reverse(),
+    ) as unknown as typeof tank;
+    reordered.tanks[0] = reversed;
 
     expect(hashWorld(reordered)).toBe(hashWorld(world));
   });
@@ -256,6 +240,7 @@ describe('compteurs temporels', () => {
       y: 1,
       radius: 2,
       ticksLeft: 10,
+      totalTicks: 10,
     });
     expect(world.explosions).toHaveLength(2);
 

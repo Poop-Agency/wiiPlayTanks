@@ -8,7 +8,7 @@
 
 import { createRng } from './rng.js';
 import { TileKind } from './state.js';
-import type { EntityId, Grid, World } from './state.js';
+import type { EntityId, Grid, Tank, TankColor, World } from './state.js';
 
 /** Paramètres de création d'un monde vide. */
 export interface WorldOptions {
@@ -33,7 +33,7 @@ export function createGrid(width: number, height: number): Grid {
     tiles[y * width + (width - 1)] = TileKind.Indestructible;
   }
 
-  return { width, height, tiles };
+  return { width, height, tiles, version: 0 };
 }
 
 /** Crée un monde vide, prêt à être peuplé par le chargeur de mission (#12). */
@@ -60,6 +60,49 @@ export function createWorld({ width, height, seed }: WorldOptions): World {
  */
 export function allocateEntityId(world: World): EntityId {
   return world.nextEntityId++;
+}
+
+/** Paramètres de création d'un tank. Tout le reste part d'un état neutre. */
+export interface TankOptions {
+  color: TankColor;
+  /** Position du centre, en tuiles. */
+  x: number;
+  y: number;
+  /** Joueur qui le pilote, ou `null` pour un tank de l'IA. */
+  playerId?: string | null;
+  /** Orientation initiale du châssis et de la tourelle, en radians. */
+  angle?: number;
+}
+
+/**
+ * Crée un tank et l'ajoute au monde.
+ *
+ * Fabrique unique et volontaire : les compteurs (`activeShells`,
+ * `reloadTicks`, …) sont des détails d'implémentation des systèmes, et les
+ * recopier à chaque point de création — chargement de mission, test, bac à
+ * sable — garantirait qu'un oubli passe inaperçu le jour où le tank gagne un
+ * champ.
+ */
+export function createTank(world: World, options: TankOptions): Tank {
+  const angle = options.angle ?? 0;
+
+  const tank: Tank = {
+    id: allocateEntityId(world),
+    color: options.color,
+    playerId: options.playerId ?? null,
+    x: options.x,
+    y: options.y,
+    bodyAngle: angle,
+    turretAngle: angle,
+    alive: true,
+    activeShells: 0,
+    activeMines: 0,
+    reloadTicks: 0,
+    mineReloadTicks: 0,
+  };
+
+  world.tanks.push(tank);
+  return tank;
 }
 
 /**

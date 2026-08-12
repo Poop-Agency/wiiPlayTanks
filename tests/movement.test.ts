@@ -7,7 +7,7 @@ import type { InputCommand, Tank, World } from '../src/core/state.js';
 import { TICK_RATE, tick } from '../src/core/tick.js';
 import type { TickInputs } from '../src/core/tick.js';
 import { REFERENCE_MEASUREMENTS, TILE_SIZE_PX, TUNING } from '../src/core/tuning.js';
-import { allocateEntityId, createWorld } from '../src/core/world.js';
+import { createTank, createWorld } from '../src/core/world.js';
 
 /** Monde ouvert, sans obstacle intérieur, pour mesurer sans interférence. */
 function openWorld(width = 40, height = 20): World {
@@ -15,21 +15,7 @@ function openWorld(width = 40, height = 20): World {
 }
 
 function addTank(world: World, x: number, y: number): Tank {
-  const tank: Tank = {
-    id: allocateEntityId(world),
-    color: 'player',
-    playerId: 'p1',
-    x,
-    y,
-    bodyAngle: 0,
-    turretAngle: 0,
-    alive: true,
-    activeShells: 0,
-    activeMines: 0,
-    reloadTicks: 0,
-  };
-  world.tanks.push(tank);
-  return tank;
+  return createTank(world, { color: 'player', playerId: 'p1', x, y });
 }
 
 function input(overrides: Partial<InputCommand> = {}): InputCommand {

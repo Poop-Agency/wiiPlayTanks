@@ -45,6 +45,17 @@ export interface Grid {
   width: number;
   height: number;
   tiles: TileKind[];
+
+  /**
+   * Incrémenté à chaque modification du terrain.
+   *
+   * Le rendu met la grille en cache dans un canevas hors écran — elle ne change
+   * qu'à la destruction d'un bloc, alors que le reste est redessiné jusqu'à
+   * 240 fois par seconde. Ce compteur lui dit quand reconstruire, sans avoir à
+   * comparer les tuiles une à une. Il fait partie de l'état, donc il traverse
+   * le réseau et informe aussi les clients distants (#13).
+   */
+  version: number;
 }
 
 /* ── Tanks ────────────────────────────────────────────────────────────────── */
@@ -93,6 +104,16 @@ export interface Tank {
 
   /** Ticks restants avant de pouvoir tirer à nouveau. */
   reloadTicks: number;
+
+  /**
+   * Ticks restants avant de pouvoir reposer une mine.
+   *
+   * Sans ce délai, maintenir la touche enfoncée viderait le stock de mines en
+   * deux pas consécutifs. L'original se joue par appuis distincts ; un délai
+   * court reproduit ce rythme sans exiger de détecter les fronts d'appui, ce
+   * qui obligerait à mémoriser l'entrée précédente dans l'état.
+   */
+  mineReloadTicks: number;
 }
 
 /* ── Projectiles ──────────────────────────────────────────────────────────── */
@@ -162,6 +183,14 @@ export interface Explosion {
   radius: number;
   /** Ticks restants d'affichage. Les dégâts sont appliqués au tick d'apparition. */
   ticksLeft: number;
+  /**
+   * Durée totale, conservée pour que le rendu puisse en déduire l'avancement.
+   *
+   * Portée par l'entité plutôt que relue dans les réglages : une explosion en
+   * cours doit finir son animation même si la durée est modifiée en direct par
+   * le panneau de calibration (#10).
+   */
+  totalTicks: number;
 }
 
 /* ── Monde ────────────────────────────────────────────────────────────────── */

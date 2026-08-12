@@ -15,6 +15,7 @@
  */
 
 import { resolveShellShellHits, resolveShellTankHits } from './systems/damage.js';
+import { removeDoomedMines, updateMineLaying, updateMines } from './systems/mines.js';
 import { updateMovement } from './systems/movement.js';
 import { removeDoomedShells, updateFiring, updateShells } from './systems/shells.js';
 import type { EntityId, InputCommand, World } from './state.js';
@@ -64,8 +65,10 @@ export function tick(world: World, inputs: TickInputs): void {
   // 2. Déplacement des tanks : résolution X puis Y, glissement le long des murs.
   updateMovement(world, intents);
 
-  // 3. Tirs, après le déplacement : l'obus part de la position finale du tank.
+  // 3. Actions, après le déplacement : l'obus part de la position finale du
+  //    tank, et la mine se pose là où il se trouve réellement.
   updateFiring(world, intents);
+  updateMineLaying(world, intents);
 
   // Entités condamnées durant ce pas. Volontairement local et non stocké dans
   // le monde : retirer une entité en cours de parcours décalerait les indices
@@ -76,30 +79,36 @@ export function tick(world: World, inputs: TickInputs): void {
   // 4. Trajectoire des obus : balayage continu et rebonds.
   updateShells(world, doomed);
 
-  // 5. Mèches et détonations → #9 (mines, explosions, destruction du terrain)
+  // 5. Compteurs, avant les détonations : une explosion créée à ce pas doit
+  //    vivre sa durée complète, pas être amputée d'un tick dès sa naissance.
+  advanceTimers(world);
 
-  // 6. Impacts. Obus contre obus d'abord : deux obus qui se croisent
+  // 6. Mèches, détonations, cascades et destruction du terrain.
+  updateMines(world, doomed);
+
+  // 7. Impacts. Obus contre obus d'abord : deux obus qui se croisent
   //    s'annulent, même si l'un d'eux atteignait un tank au même pas.
   resolveShellShellHits(world, doomed);
   resolveShellTankHits(world, doomed);
 
-  advanceTimers(world);
-
-  // 7. Compactage : les entités marquées disparaissent ici, et seulement ici.
+  // 8. Compactage : les entités marquées disparaissent ici, et seulement ici.
   removeDoomedShells(world, doomed);
+  removeDoomedMines(world, doomed);
   removeExpiredExplosions(world);
 
   world.tick++;
 }
 
-/** Décrémente tous les compteurs temporels d'un pas. */
+/**
+ * Décrémente les compteurs temporels d'un pas.
+ *
+ * Les mèches de mines ne sont pas traitées ici mais dans `updateMines`, où le
+ * décompte et la détonation qu'il déclenche restent au même endroit.
+ */
 function advanceTimers(world: World): void {
   for (const tank of world.tanks) {
     if (tank.reloadTicks > 0) tank.reloadTicks--;
-  }
-
-  for (const mine of world.mines) {
-    if (mine.fuseTicks > 0) mine.fuseTicks--;
+    if (tank.mineReloadTicks > 0) tank.mineReloadTicks--;
   }
 
   for (const explosion of world.explosions) {

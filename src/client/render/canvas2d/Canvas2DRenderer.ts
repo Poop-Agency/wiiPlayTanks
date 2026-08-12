@@ -10,9 +10,15 @@ import { TileKind } from '@core/state';
 import type { Grid } from '@core/state';
 import { TILE_SIZE_PX, TUNING } from '@core/tuning';
 import { tileAt } from '@core/grid';
-import { BLOCKS, BOARD, SHELL, TANK_COLORS, darken, lighten } from '../palette';
+import { BLAST, BLOCKS, BOARD, SHELL, TANK_COLORS, darken, lighten } from '../palette';
 import type { Renderer } from '../Renderer';
-import type { RenderSnapshot, ShellView, TankView } from '../snapshots';
+import type {
+  ExplosionView,
+  MineView,
+  RenderSnapshot,
+  ShellView,
+  TankView,
+} from '../snapshots';
 
 /** Décalage vertical des faces de blocs, qui simule leur épaisseur. */
 const BLOCK_RELIEF_PX = 5;
@@ -24,6 +30,7 @@ export class Canvas2DRenderer implements Renderer {
   /** Cache du terrain. Reconstruit seulement quand la grille change. */
   #terrain: HTMLCanvasElement | null = null;
   #terrainStale = true;
+  #terrainVersion = -1;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -58,8 +65,18 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   draw(grid: Grid, view: RenderSnapshot): void {
-    if (this.#terrainStale) this.#buildTerrain(grid);
+    // Le cache se reconstruit sur changement de version plutôt que sur appel
+    // explicite : personne ne peut oublier de signaler une destruction de bloc.
+    if (this.#terrainStale || grid.version !== this.#terrainVersion) {
+      this.#buildTerrain(grid);
+    }
     if (this.#terrain) this.#ctx.drawImage(this.#terrain, 0, 0);
+
+    // Les mines au sol, sous tout le reste : un tank posé dessus doit rester
+    // visible.
+    for (const mine of view.mines) {
+      this.#drawMine(mine);
+    }
 
     for (const tank of view.tanks) {
       if (tank.alive) this.#drawTank(tank);
@@ -68,6 +85,11 @@ export class Canvas2DRenderer implements Renderer {
     // Les obus par-dessus les tanks : c'est ce qu'on doit suivre des yeux.
     for (const shell of view.shells) {
       this.#drawShell(shell);
+    }
+
+    // Et les explosions au-dessus de tout.
+    for (const explosion of view.explosions) {
+      this.#drawExplosion(explosion);
     }
   }
 
@@ -108,6 +130,7 @@ export class Canvas2DRenderer implements Renderer {
 
     this.#terrain = canvas;
     this.#terrainStale = false;
+    this.#terrainVersion = grid.version;
   }
 
   #drawFloor(ctx: CanvasRenderingContext2D, grid: Grid): void {
@@ -280,6 +303,67 @@ export class Canvas2DRenderer implements Renderer {
       ctx.arc(-radius * 0.35, -radius * 0.35, radius * 0.55, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    ctx.restore();
+  }
+
+  /* ── Mines et explosions ─────────────────────────────────────────────── */
+
+  #drawMine(mine: MineView): void {
+    const ctx = this.#ctx;
+    const radius = TUNING.mine.radiusTiles * TILE_SIZE_PX;
+
+    ctx.save();
+    ctx.translate(mine.x * TILE_SIZE_PX, mine.y * TILE_SIZE_PX);
+
+    ctx.fillStyle = BOARD.shadow;
+    ctx.beginPath();
+    ctx.ellipse(1, 2, radius, radius * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = BLAST.mineBody;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = BLAST.mineRim;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Voyant : c'est le seul indice donné au joueur pour juger s'il a encore le
+    // temps de passer. Il ne clignote que plus vite, jamais différemment.
+    if (mine.blinkOn) {
+      ctx.fillStyle = mine.urgency > 0.6 ? BLAST.mineLightUrgent : BLAST.mineLightIdle;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  #drawExplosion(explosion: ExplosionView): void {
+    const ctx = this.#ctx;
+
+    // La boule croît vite puis s'estompe : une racine carrée donne cette
+    // détente franche au début, sans le côté mou d'une progression linéaire.
+    const growth = Math.sqrt(Math.min(1, explosion.progress * 1.6));
+    const radius = explosion.radius * TILE_SIZE_PX * (0.45 + 0.55 * growth);
+    const fade = 1 - explosion.progress;
+
+    ctx.save();
+    ctx.translate(explosion.x * TILE_SIZE_PX, explosion.y * TILE_SIZE_PX);
+    ctx.globalAlpha = fade;
+
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+    gradient.addColorStop(0, BLAST.fireCore);
+    gradient.addColorStop(0.55, BLAST.fireEdge);
+    gradient.addColorStop(1, BLAST.smoke);
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
