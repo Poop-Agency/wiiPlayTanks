@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { FixedTimestep, MAX_CATCHUP_TICKS, MAX_FRAME_SECONDS } from '../src/client/loop.js';
+import { FixedTimestep, MAX_CATCHUP_TICKS, MAX_FRAME_SECONDS } from '../src/shared/timestep.js';
 import { DT, TICK_RATE } from '../src/core/tick.js';
 
 /**

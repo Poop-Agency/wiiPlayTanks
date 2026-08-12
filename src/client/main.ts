@@ -8,8 +8,10 @@
  *
  * ─── Modes ───────────────────────────────────────────────────────────────────
  *
- *   (aucun paramètre)  la campagne, à partir de la mission 1
- *   ?mission=N         la campagne, à partir de la mission N
+ *   (aucun paramètre)  la campagne solo, à partir de la mission 1
+ *   ?mission=N         la campagne solo, à partir de la mission N
+ *   ?enligne=1         le co-op, salon « principal »
+ *   ?enligne=1&salon=X un salon nommé
  *   ?bac=1             le terrain d'essai des tests bout-en-bout
  *   ?bac=1&calme=1     le même, sans ennemis
  *
@@ -25,6 +27,8 @@ import { InputSampler } from './input/sampler';
 import { LocalCampaign } from './local/LocalCampaign';
 import { createSandboxSession } from './local/sandbox';
 import { startGameLoop } from './loop';
+import { Connection, stablePlayerId } from './net/connection';
+import { NetworkSession } from './net/NetworkSession';
 import { BOARD_BOTTOM_BAND_PX, Canvas2DRenderer } from './render/canvas2d/Canvas2DRenderer';
 import type { Session } from './session';
 import { drawHud } from './ui/hud';
@@ -50,10 +54,60 @@ function requestedMission(params: URLSearchParams): number {
   return Math.min(Math.max(raw, 1), CAMPAIGN_LENGTH);
 }
 
+/** Port sur lequel Vite sert la page en développement. */
+const VITE_DEV_PORT = '5173';
+
+/** Port du serveur de jeu. */
+const GAME_SERVER_PORT = '3000';
+
+/**
+ * Adresse du serveur de jeu.
+ *
+ * Deux situations. En développement, Vite sert la page et le serveur de jeu
+ * tourne à côté : il faut donc changer de port. En production, le serveur de jeu
+ * sert lui-même les fichiers, et l'hôte courant est le bon.
+ *
+ * `?serveur=` court-circuite la déduction, pour pointer une autre machine.
+ */
+function serverUrl(params: URLSearchParams): string {
+  const explicit = params.get('serveur');
+  if (explicit) return explicit;
+
+  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host =
+    window.location.port === VITE_DEV_PORT
+      ? `${window.location.hostname}:${GAME_SERVER_PORT}`
+      : window.location.host;
+
+  return `${scheme}//${host}/ws`;
+}
+
 function createSession(params: URLSearchParams): Session {
   if (params.has('bac')) {
     return createSandboxSession({ withEnemies: !params.has('calme') });
   }
+
+  if (params.has('enligne')) {
+    const room = params.get('salon') ?? 'principal';
+    const playerId = stablePlayerId();
+
+    // La session est construite avant la connexion : le transport lui est
+    // donné, et les messages lui arrivent ensuite. C'est ce qui permet de la
+    // tester avec un transport factice, sans WebSocket.
+    let network: NetworkSession;
+    const connection = new Connection({
+      url: serverUrl(params),
+      playerId,
+      room,
+      name: params.get('nom') ?? `Joueur ${playerId.slice(0, 4)}`,
+      onMessage: (message) => network.handle(message),
+      onClose: () => network.disconnected(),
+    });
+
+    network = new NetworkSession(connection);
+    return network;
+  }
+
   return new LocalCampaign(requestedMission(params));
 }
 
@@ -63,7 +117,14 @@ const renderer = new Canvas2DRenderer(canvas);
 const params = new URLSearchParams(window.location.search);
 const session = createSession(params);
 
-renderer.resize(session.world.grid);
+/**
+ * Dimensions pour lesquelles la surface de rendu est dimensionnée.
+ *
+ * Vérifiées à chaque frame plutôt qu'une fois au démarrage : en co-op, le
+ * terrain n'arrive qu'après la connexion, et le canevas serait resté à la
+ * taille du monde d'attente.
+ */
+let sizedFor = { width: 0, height: 0 };
 
 const sampler = new InputSampler(canvas, (clientX, clientY) =>
   renderer.pointerToWorld(clientX, clientY),
@@ -185,7 +246,13 @@ startGameLoop({
     rates.frames++;
     sampleRates(performance.now());
 
-    renderer.draw(session.world.grid, session.view(alpha));
+    const grid = session.world.grid;
+    if (grid.width !== sizedFor.width || grid.height !== sizedFor.height) {
+      sizedFor = { width: grid.width, height: grid.height };
+      renderer.resize(grid);
+    }
+
+    renderer.draw(grid, session.view(alpha));
     renderer.drawDebug(session.world, panel.debug);
 
     if (overlayCtx) {

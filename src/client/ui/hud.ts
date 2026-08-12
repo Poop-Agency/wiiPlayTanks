@@ -12,7 +12,7 @@
  */
 
 import { BOARD_TOP_BAND_PX } from '../render/canvas2d/Canvas2DRenderer';
-import type { CampaignView } from '../local/LocalCampaign';
+import type { CampaignView } from '../session';
 import { TANK_COLORS } from '../render/palette';
 
 const HUD = {
@@ -113,7 +113,11 @@ export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void
   ctx.fillStyle = HUD.bandBackground;
   ctx.fillRect(0, 0, width, BAND_HEIGHT);
 
-  const middle = BAND_HEIGHT / 2;
+  // En co-op, deux lignes tiennent dans la bande : la ligne principale remonte
+  // pour laisser la place aux coéquipiers en dessous. Déborder sur le plateau
+  // masquerait le mur d'enceinte, ce qu'on vient justement de corriger.
+  const coop = view.teammates.length > 0;
+  const middle = coop ? 13 : BAND_HEIGHT / 2;
 
   ctx.fillStyle = HUD.text;
   ctx.font = 'bold 14px ui-monospace, monospace';
@@ -152,6 +156,13 @@ export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void
     width - 14,
     middle,
   );
+
+  if (coop) {
+    ctx.fillStyle = HUD.textDim;
+    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`avec ${view.teammates.join(', ')}`, 14, BAND_HEIGHT - 11);
+  }
 
   /* ── Bandeau d'issue ───────────────────────────────────────────────── */
 

@@ -13,7 +13,7 @@
 
 import type { World } from '@core/state';
 import type { Tuning } from '@core/tuning';
-import type { CampaignView } from './local/LocalCampaign';
+import type { CampaignView } from './session';
 
 /** Cadences mesurées, pour vérifier que la simulation reste indépendante de l'écran. */
 export interface RateProbe {

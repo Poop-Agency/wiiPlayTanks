@@ -11,7 +11,8 @@
     "serve": "bun run src/server/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test ./tests",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "coop": "bun run build && bun run serve"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
