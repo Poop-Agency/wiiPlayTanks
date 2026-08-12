@@ -1,0 +1,10 @@
+# La musique **est** déployée : elle pèse l'essentiel des 33 Mo, mais le jeu
+# perdrait son ambiance sans elle. Les droits ont été réglés en amont — voir
+# `public/musique/README.md`.
+#
+# Rien de tout ceci, en revanche, n'a sa place dans un déploiement.
+tests
+e2e
+test-results
+playwright-report
+docs

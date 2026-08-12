@@ -15,6 +15,15 @@
 
 import { CAMPAIGN_LENGTH } from '@shared/campaign';
 
+/**
+ * Construction sans co-op, pour un hébergement statique.
+ *
+ * Posée à la construction (`VITE_SOLO_ONLY=1`) et non devinée à l'exécution :
+ * un client ne peut pas savoir si l'origine qui l'a servi héberge un serveur
+ * de jeu sans tenter la connexion, et échouer prend plusieurs secondes.
+ */
+const SOLO_ONLY = import.meta.env['VITE_SOLO_ONLY'] === '1';
+
 /** Y a-t-il déjà un mode demandé dans l'URL ? */
 export function hasMode(params: URLSearchParams): boolean {
   return params.has('mission') || params.has('enligne') || params.has('bac');
@@ -36,7 +45,14 @@ export function showTitleScreen(host: HTMLElement = document.body): void {
   subtitle.textContent = `${CAMPAIGN_LENGTH} missions — d'après le mini-jeu de Wii Play`;
 
   panel.append(title, subtitle);
-  panel.append(soloSection(), coopSection(), helpSection());
+  panel.append(soloSection());
+
+  // Le co-op exige un serveur de jeu. Sur un hébergement statique il n'y en a
+  // aucun : proposer le bouton mènerait à une connexion qui n'aboutit jamais,
+  // ce qui se lit comme une panne plutôt que comme une absence.
+  if (!SOLO_ONLY) panel.append(coopSection());
+
+  panel.append(helpSection());
 
   screen.append(panel);
   host.append(screen);
