@@ -18,17 +18,26 @@ test('la page se charge et peint le canevas sans erreur console', async ({ page 
   const canvas = page.locator('#game');
   await expect(canvas).toBeVisible();
 
-  const dimensions = await canvas.evaluate((element) => ({
-    width: (element as HTMLCanvasElement).width,
-    height: (element as HTMLCanvasElement).height,
-  }));
-  expect(dimensions).toEqual({ width: 800, height: 600 });
+  // La taille du canevas se déduit du terrain chargé, on ne la code donc pas en
+  // dur : chaque mission a ses propres dimensions.
+  const dimensions = await canvas.evaluate((element) => {
+    const grid = window.__tanks?.world.grid;
+    return {
+      actual: {
+        width: (element as HTMLCanvasElement).width,
+        height: (element as HTMLCanvasElement).height,
+      },
+      expected: grid ? { width: grid.width * 32, height: grid.height * 32 } : null,
+    };
+  });
+  expect(dimensions.actual).toEqual(dimensions.expected);
 
   // Le canevas ne doit pas être resté transparent : au moins un pixel opaque.
   const hasPaintedPixels = await canvas.evaluate((element) => {
-    const context = (element as HTMLCanvasElement).getContext('2d');
+    const target = element as HTMLCanvasElement;
+    const context = target.getContext('2d');
     if (!context) return false;
-    const { data } = context.getImageData(0, 0, 800, 600);
+    const { data } = context.getImageData(0, 0, target.width, target.height);
     for (let i = 3; i < data.length; i += 4) {
       if (data[i] !== 0) return true;
     }
@@ -68,11 +77,6 @@ test('la simulation avance à 60 pas par seconde de temps réel', async ({ page 
   expect(ticksPerSecond).toBeLessThan(70);
 });
 
-declare global {
-  interface Window {
-    __tanks?: {
-      world: { tick: number };
-      rates: { ticksPerSecond: number; framesPerSecond: number };
-    };
-  }
-}
+// La déclaration de `window.__tanks` vit dans src/client/debug-bridge.ts :
+// deux `declare global` concurrents pour la même propriété ne compileraient pas.
+import '../src/client/debug-bridge';

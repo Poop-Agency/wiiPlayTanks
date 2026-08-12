@@ -14,6 +14,7 @@
  * dérivaient l'un de l'autre.
  */
 
+import { updateMovement } from './systems/movement.js';
 import type { InputCommand, World } from './state.js';
 
 /**
@@ -54,9 +55,13 @@ export type TickInputs = ReadonlyArray<readonly [tankId: number, input: InputCom
  * L'ordre n'est pas anodin : il fixe l'arbitrage des cas simultanés. Il est
  * figé ici, et le test de déterminisme le verrouille.
  */
-export function tick(world: World, _inputs: TickInputs): void {
-  // 1. Décisions de l'IA          → #11 (renseigne les intentions des tanks non joueurs)
-  // 2. Déplacement des tanks      → #7  (résolution X puis Y, glissement le long des murs)
+export function tick(world: World, inputs: TickInputs): void {
+  // 1. Décisions de l'IA : renseigne les intentions des tanks non joueurs → #11
+  const intents = new Map(inputs);
+
+  // 2. Déplacement des tanks : résolution X puis Y, glissement le long des murs.
+  updateMovement(world, intents);
+
   // 3. Déplacement des obus       → #8  (intégration balayée, rebonds)
   // 4. Mèches et détonations      → #9  (mines, explosions, destruction du terrain)
   // 5. Résolution des dégâts      → #8/#9 (obus↔tank, obus↔obus, explosion↔entités)
