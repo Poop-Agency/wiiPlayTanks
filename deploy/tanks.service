@@ -1,0 +1,43 @@
+# Service systemd du serveur de jeu.
+#
+#     sudo cp deploy/tanks.service /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now tanks
+#
+# Adapter `User`, `WorkingDirectory` et le chemin de `bun` si le dépôt n'est pas
+# dans /home/ubuntu (images Oracle Linux : l'utilisateur est `opc`).
+#
+# `enable` couvre les redémarrages de la machine, `Restart=always` couvre les
+# plantages. Les deux sont nécessaires : ni l'un ni l'autre ne fait le travail
+# de l'autre.
+
+[Unit]
+Description=Tanks — serveur de jeu autoritaire (co-op)
+Documentation=https://github.com/Poop-Agency/wiiPlayTanks
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/wiiPlayTanks
+Environment=PORT=3000
+ExecStart=/home/ubuntu/.bun/bin/bun run src/server/main.ts
+Restart=always
+RestartSec=3
+
+# Bornes larges, mais bornes : une VM héberge rarement ce seul service, et une
+# boucle folle ici ne doit pas emporter ses voisins. Le serveur mesuré tient en
+# 60 Mo et un demi-cœur en pleine partie.
+MemoryMax=1G
+CPUQuota=150%
+
+# Ce processus ne fait que lire son dossier et écouter un port.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/wiiPlayTanks
+
+[Install]
+WantedBy=multi-user.target

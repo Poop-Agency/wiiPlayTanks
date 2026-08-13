@@ -99,6 +99,46 @@ l'adresse du serveur de l'origine qui l'a servi. Il faut
 [cloudflared](https://github.com/cloudflare/cloudflared/releases), et la machine
 doit rester allumée.
 
+### Sur une VM, en service permanent
+
+C'est ce que `deploy/` installe. Testé sur Oracle Cloud, Ubuntu 24.04 ARM
+(Ampere A1) — mais rien n'y est propre à Oracle sauf la section pare-feu.
+
+```bash
+curl -fsSL https://bun.sh/install | bash && exec $SHELL
+cd ~/wiiPlayTanks && bun install && bun run build
+
+sudo cp deploy/tanks.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tanks
+```
+
+`enable` couvre les redémarrages de la machine, `Restart=always` les plantages.
+Les logs sont dans `journalctl -u tanks -f`, les mises à jour dans
+`./deploy/maj.sh`.
+
+**Le pare-feu, sur Oracle, bloque à deux endroits** — et on n'y pense jamais au
+second :
+
+1. **Console OCI** : Networking → VCN → Security List du sous-réseau → Ingress,
+   TCP 3000 depuis `0.0.0.0/0`.
+2. **Sur la machine** : les images Oracle arrivent avec une chaîne `INPUT` qui
+   se termine par un `REJECT` global. Une règle ajoutée **après** ce `REJECT`
+   n'est jamais atteinte, et rien ne le signale. Il faut donc insérer avant :
+
+```bash
+REJECT=$(sudo iptables -L INPUT -n --line-numbers | awk '/REJECT/ {print $1; exit}')
+sudo iptables -I INPUT "$REJECT" -p tcp --dport 3000 -m state --state NEW -j ACCEPT
+sudo netfilter-persistent save
+```
+
+Sans la seconde étape, `curl localhost:3000` répond et l'IP publique ne répond
+pas — le symptôme est indiscernable d'une Security List mal réglée.
+
+À ce stade `http://<ip>:3000` sert le jeu **et** le WebSocket. Pour du HTTPS avec
+un nom de domaine, le plus court est un tunnel Cloudflare permanent
+(`cloudflared service install`), qui dispense d'ouvrir le moindre port.
+
 ### Séparer le client et le serveur
 
 Le solo ne demande aucun serveur : `dist/` suffit. On peut donc publier le
