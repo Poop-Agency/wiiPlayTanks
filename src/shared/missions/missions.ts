@@ -112,10 +112,10 @@ const CAMPAIGN_TOTAL_MISSIONS = 100;
  * sécurité au départ. L'original place parfois un adversaire tout près du
  * joueur, et c'est un choix de game design, pas un défaut à corriger.
  *
- * Les tracés restants (1, 2 et 9 à 20) attendent leurs captures ; la liste
+ * Les tracés restants (1, 2 et 10 à 20) attendent leurs captures ; la liste
  * grandit à mesure qu'on les relève.
  */
-export const TRANSCRIBED_MISSION_IDS: ReadonlySet<number> = new Set([3, 4, 5, 6, 7, 8]);
+export const TRANSCRIBED_MISSION_IDS: ReadonlySet<number> = new Set([3, 4, 5, 6, 7, 8, 9]);
 
 /** Les vingt missions d'origine, tracés uniques écrits à la main. */
 const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
@@ -366,28 +366,30 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 9,
     name: 'Le mur du milieu',
-    // Relevé sur capture du vrai jeu : une longue colonne cassable coupe
-    // l'arène en deux dans la hauteur, doublée à droite de deux paliers
-    // pleins et à gauche d'un bloc bas. Six adversaires des deux côtés du
-    // mur — il faut le percer ou le contourner.
+    // Relevé sur capture du vrai jeu : une colonne de liège coupe l'arène
+    // dans toute sa hauteur, coiffée en haut et en bas d'un bloc plein, avec
+    // un décrochement d'une tuile vers la droite à mi-parcours. Le seul
+    // passage à pied est en bas ; partout ailleurs il faut percer le liège.
+    // De part et d'autre, deux petits massifs pleins à gauche et un escalier
+    // à droite. Six adversaires, quatre cendre et deux jaunes.
     grid: `
 ##################
+#.......#........#
+#.....a.X........#
+#.......X........#
+#..y....X.....a..#
+#..##...X........#
+#.......X...a....#
+#..#....XX.###...#
+#..##....X...##..#
+#........X.......#
+#........X.......#
+#........X.......#
+#........X.......#
+#.......##.......#
+#..1..........y..#
 #................#
-#.....y........a.#
-#.........X......#
-#........aX......#
-#.........X.###..#
-#.........X......#
-#.........X....a.#
-#.........X......#
-#..1......X.###y.#
-#.........X......#
 #...........a....#
-#....###.........#
-#................#
-#................#
-#................#
-#................#
 ##################
 `,
   },
