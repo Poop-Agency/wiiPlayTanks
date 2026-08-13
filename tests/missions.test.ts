@@ -5,12 +5,15 @@ import type { TankColor, World } from '../src/core/state.js';
 import { enemiesRemaining, missionOutcome } from '../src/core/systems/mission.js';
 import { TUNING } from '../src/core/tuning.js';
 import { createTank, createWorld } from '../src/core/world.js';
+import { enemyComposition } from '../src/shared/missions/composition.js';
+import { COLOR_PROGRESSION, generateRemixMission } from '../src/shared/missions/generate.js';
 import { loadMission } from '../src/shared/missions/load.js';
 import {
   ARENA_HEIGHT_TILES,
   ARENA_WIDTH_TILES,
   MISSIONS,
   missionByNumber,
+  TRANSCRIBED_MISSION_IDS,
 } from '../src/shared/missions/missions.js';
 import { parseMission } from '../src/shared/missions/parse.js';
 import type { EnemySpawn, ParsedMission, SpawnPoint } from '../src/shared/missions/parse.js';
@@ -45,7 +48,10 @@ const LEGACY_ROSTERS: ReadonlyArray<readonly TankColor[]> = [
   /*  1 */ ['brown'],
   /*  2 */ ['ash'],
   /*  3 */ ['ash', 'ash', 'brown'],
-  /*  4 */ ['ash', 'ash', 'brown'],
+  // Seul effectif corrigé sur capture du vrai jeu : quatre tanks y sont
+  // visibles (deux bruns au fond, deux cendre au milieu), là où l'ancienne
+  // version n'en relevait que trois. Voir `docs/provenance.md`.
+  /*  4 */ ['ash', 'ash', 'brown', 'brown'],
   /*  5 */ ['teal', 'teal'],
   /*  6 */ ['teal', 'teal', 'ash', 'ash'],
   /*  7 */ ['teal', 'teal', 'teal', 'teal'],
@@ -131,10 +137,12 @@ function reachableFrom(parsed: ParsedMission, origin: SpawnPoint): Set<number> {
 }
 
 describe('la campagne est complète', () => {
-  test('elle compte vingt missions numérotées de 1 à 20', () => {
-    expect(MISSIONS).toHaveLength(20);
+  test('elle compte cent missions numérotées de 1 à 100', () => {
+    // Comme dans le vrai jeu : les vingt premières et les huit paliers sont
+    // écrits à la main, le reste est généré — voir generate.ts.
+    expect(MISSIONS).toHaveLength(100);
     expect(MISSIONS.map((mission) => mission.id)).toEqual(
-      Array.from({ length: 20 }, (_, index) => index + 1),
+      Array.from({ length: 100 }, (_, index) => index + 1),
     );
   });
 
@@ -145,13 +153,14 @@ describe('la campagne est complète', () => {
 
   test('la recherche par numéro suit la numérotation affichée', () => {
     expect(missionByNumber(1)?.id).toBe(1);
-    expect(missionByNumber(20)?.id).toBe(20);
+    expect(missionByNumber(21)?.id).toBe(21);
+    expect(missionByNumber(100)?.id).toBe(100);
     expect(missionByNumber(0)).toBeUndefined();
-    expect(missionByNumber(21)).toBeUndefined();
+    expect(missionByNumber(101)).toBeUndefined();
   });
 });
 
-describe.each(PARSED)('mission $id — $name', ({ parsed }) => {
+describe.each(PARSED)('mission $id — $name', ({ id, parsed }) => {
   const { grid, playerSpawns, enemySpawns } = parsed;
 
   test("l'arène a les dimensions communes à toute la campagne", () => {
@@ -196,8 +205,17 @@ describe.each(PARSED)('mission $id — $name', ({ parsed }) => {
   test('aucun ennemi ne se trouve à portée immédiate du départ', () => {
     // Un vert à cinq tuiles tue en deux secondes et demie, avant même que le
     // joueur ait pu bouger. La distance de sécurité vaut la portée standard de
-    // détection, soit un tiers de la largeur de l'arène.
-    const MINIMUM_TILES = 8;
+    // détection, soit un tiers de la largeur de l'arène — dérivée et non codée
+    // en dur, le plateau ayant déjà changé de taille une fois (23 × 19 →
+    // 18 × 18), ce qui avait transformé ce garde-fou en interdit de la moitié
+    // du terrain.
+    //
+    // Les tracés transcrits du vrai jeu en sont dispensés : c'est une règle
+    // que ce projet s'est donnée, pas une de l'original, et sur une
+    // transcription la fidélité prime.
+    if (TRANSCRIBED_MISSION_IDS.has(id)) return;
+
+    const MINIMUM_TILES = ARENA_WIDTH_TILES / 3;
     const spawn = playerSpawns[0]!;
 
     const tooClose = enemySpawns.filter(
@@ -228,7 +246,10 @@ describe.each(PARSED)('mission $id — $name', ({ parsed }) => {
 });
 
 describe('les effectifs sont ceux de la progression relevée', () => {
-  test.each(MISSIONS.map((mission, index) => [mission.id, index] as const))(
+  // Les vingt premières missions seulement : au-delà, il n'existe aucun
+  // relevé à comparer — la mission 21 et suivantes sont générées ou, pour
+  // les paliers, un réglage à l'œil (voir les blocs dédiés plus bas).
+  test.each(LEGACY_ROSTERS.map((_, index) => [index + 1, index] as const))(
     'mission %i',
     (_id, index) => {
       const spawns: EnemySpawn[] = PARSED[index]!.parsed.enemySpawns;
@@ -241,7 +262,8 @@ describe('les effectifs sont ceux de la progression relevée', () => {
   test('les couleurs entrent en scène dans un ordre progressif', () => {
     // Vérifie que le portage n'a pas mélangé les missions : chaque couleur
     // apparaît pour la première fois à la mission où l'ancienne version la
-    // faisait entrer.
+    // faisait entrer — et le noir, absent des vingt premières, à son palier
+    // d'introduction dans la campagne étendue.
     const firstAppearance = new Map<TankColor, number>();
 
     PARSED.forEach(({ id, parsed }) => {
@@ -259,6 +281,7 @@ describe('les effectifs sont ceux de la progression relevée', () => {
       green: 12,
       purple: 15,
       white: 20,
+      black: 50,
     });
   });
 });
@@ -401,5 +424,107 @@ describe('issue d\'une mission', () => {
     world.tanks[1]!.alive = false;
 
     expect(enemiesRemaining(world)).toBe(2);
+  });
+});
+
+/** Numéros des huit missions jalons — fixes, jamais remixées. */
+const MILESTONE_IDS = new Set([30, 40, 50, 60, 70, 80, 90, 100]);
+
+/** Numéro de mission à partir duquel une couleur est autorisée dans un remix. */
+function unlockStage(color: TankColor): number | undefined {
+  return COLOR_PROGRESSION.find(([candidate]) => candidate === color)?.[1];
+}
+
+describe('les missions remixées (21-99)', () => {
+  const remixIds = Array.from({ length: 79 }, (_, index) => index + 21).filter(
+    (id) => !MILESTONE_IDS.has(id),
+  );
+
+  test('même numéro, même grille — à chaque fois', () => {
+    // Le rejeu après échec et l'accord serveur/client en co-op en dépendent :
+    // une mission ne doit jamais changer entre deux constructions.
+    const basePool = MISSIONS.slice(0, 20);
+
+    for (const id of [21, 47, 73, 99]) {
+      const first = generateRemixMission(id, basePool);
+      const second = generateRemixMission(id, basePool);
+      expect(second.grid).toBe(first.grid);
+    }
+  });
+
+  test('aucune couleur non débloquée à ce numéro', () => {
+    for (const id of remixIds) {
+      for (const group of enemyComposition(id)) {
+        const stage = unlockStage(group.color);
+        expect(stage).toBeDefined();
+        expect(stage!).toBeLessThanOrEqual(id);
+      }
+    }
+  });
+
+  test('le noir n\'apparaît jamais avant son palier de déblocage', () => {
+    const blackStage = unlockStage('black')!;
+
+    for (const id of remixIds) {
+      const hasBlack = enemyComposition(id).some((group) => group.color === 'black');
+      expect(hasBlack ? id >= blackStage : true).toBe(true);
+    }
+  });
+
+  test('un effectif toujours dans une plage plausible', () => {
+    // Borne large et non couplée à la rampe exacte de `generate.ts` — ce test
+    // vérifie l'absence d'aberration (zéro ennemi, ou une centaine), pas le
+    // réglage fin de la courbe, qui reste un best-effort documenté.
+    for (const id of remixIds) {
+      const count = enemyComposition(id).reduce((sum, group) => sum + group.count, 0);
+      expect(count).toBeGreaterThanOrEqual(1);
+      expect(count).toBeLessThanOrEqual(8);
+    }
+  });
+
+  test('l\'effectif croît globalement avec la campagne', () => {
+    // Tendance, pas monotonie stricte : un système tiré au sort n'a pas à
+    // progresser mission par mission, seulement sur la durée.
+    const countOf = (id: number) =>
+      enemyComposition(id).reduce((sum, group) => sum + group.count, 0);
+
+    const early = remixIds.filter((id) => id <= 30);
+    const late = remixIds.filter((id) => id >= 90);
+    const average = (ids: number[]) => ids.reduce((sum, id) => sum + countOf(id), 0) / ids.length;
+
+    expect(average(late)).toBeGreaterThan(average(early));
+  });
+});
+
+describe('les missions jalons (30-100)', () => {
+  const MILESTONE_ROSTERS: Readonly<Record<number, readonly TankColor[]>> = {
+    30: ['white', 'white', 'purple', 'green'],
+    40: ['white', 'white', 'white', 'purple', 'purple'],
+    50: ['black', 'white', 'white', 'purple', 'purple'],
+    60: ['black', 'black', 'white', 'white', 'purple', 'purple'],
+    70: ['black', 'black', 'black', 'white', 'white', 'purple'],
+    80: ['black', 'black', 'black', 'white', 'white', 'purple', 'purple'],
+    90: ['black', 'black', 'black', 'black', 'white', 'white', 'purple', 'purple'],
+    100: ['black', 'black', 'black', 'black', 'black', 'white', 'white', 'purple'],
+  };
+
+  test.each([...MILESTONE_IDS])('mission %i tient l\'effectif attendu', (id) => {
+    const spawns = enemyComposition(id).flatMap((group) => Array(group.count).fill(group.color));
+    expect(tally(spawns as TankColor[])).toEqual(tally(MILESTONE_ROSTERS[id]!));
+  });
+
+  test('le noir n\'apparaît qu\'à partir du palier 50', () => {
+    expect(enemyComposition(30).some((g) => g.color === 'black')).toBe(false);
+    expect(enemyComposition(40).some((g) => g.color === 'black')).toBe(false);
+    expect(enemyComposition(50).some((g) => g.color === 'black')).toBe(true);
+  });
+
+  test('l\'effectif des paliers ne diminue jamais', () => {
+    const ids = [...MILESTONE_IDS].sort((a, b) => a - b);
+    const counts = ids.map((id) => enemyComposition(id).reduce((sum, g) => sum + g.count, 0));
+
+    for (let index = 1; index < counts.length; index++) {
+      expect(counts[index]!).toBeGreaterThanOrEqual(counts[index - 1]!);
+    }
   });
 });

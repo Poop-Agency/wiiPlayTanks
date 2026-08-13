@@ -36,13 +36,31 @@ const AIM_PERIOD_TICKS = 12;
 
 /** État d'IA neutre, attribué à tout tank non piloté par un joueur. */
 export function createAiState(): TankAiState {
-  return { solutionAngle: null, fireCooldownTicks: 0, roamAngle: 0, roamTicks: 0 };
+  return {
+    solutionAngle: null,
+    fireCooldownTicks: 0,
+    mineCooldownTicks: 0,
+    roamAngle: 0,
+    roamTicks: 0,
+  };
 }
 
-/** Le tank que l'IA cherche à atteindre : le joueur vivant le plus proche. */
-function findTarget(world: World, tank: Tank, profile: TankProfile): Tank | null {
+/**
+ * Joueur vivant le plus proche, sans aucune limite de portée.
+ *
+ * La portée de détection du profil ne sert plus qu'au **déplacement**. Le tir,
+ * lui, n'est plus conditionné qu'à l'existence d'un angle : un tank tente sa
+ * chance dès qu'une trajectoire aboutit, où que soit le joueur.
+ *
+ * Avant, la portée gouvernait les deux, et un brun restait muet à l'autre bout
+ * de l'arène alors qu'il avait une ligne dégagée — il fallait s'approcher pour
+ * qu'il daigne réagir, ce qui se lisait comme une panne plutôt que comme de la
+ * prudence. Chercher un angle coûte cher, mais seulement une fois tous les
+ * `AIM_PERIOD_TICKS` pas, et le nombre d'ennemis reste petit.
+ */
+function findNearestPlayer(world: World, tank: Tank): { tank: Tank; distance: number } | null {
   let best: Tank | null = null;
-  let bestDistance = profile.detectionRangeTiles;
+  let bestDistance = Number.POSITIVE_INFINITY;
 
   for (const candidate of world.tanks) {
     if (candidate.id === tank.id || !candidate.alive) continue;
@@ -56,7 +74,7 @@ function findTarget(world: World, tank: Tank, profile: TankProfile): Tank | null
     }
   }
 
-  return best;
+  return best ? { tank: best, distance: bestDistance } : null;
 }
 
 /** Direction de déplacement voulue, avant prise en compte des obstacles. */
@@ -137,6 +155,157 @@ function updateRoaming(world: World, tank: Tank, ai: TankAiState): void {
   );
 }
 
+/** Multiple du rayon de souffle à partir duquel un tank fuit une mine. */
+const MINE_FLIGHT_RADIUS_FACTOR = 2;
+
+/** Multiple du rayon de fuite imposé entre deux mines posées par l'IA. */
+const MINE_SPACING_FACTOR = 1.5;
+
+/**
+ * Distance à laquelle un tank commence à fuir une mine, en tuiles.
+ *
+ * Le double du rayon de souffle, franchement au-delà de ce qui tue (≈ 2,4
+ * tuiles, boîte du tank comprise). S'en tenir au rayon exact ferait osciller le
+ * tank sur la limite, et la limite est mortelle.
+ *
+ * Fonction et non constante : le panneau de calibration édite `TUNING` en
+ * direct, et une valeur figée à l'import ne suivrait pas le curseur.
+ */
+function mineFlightRadius(): number {
+  return TUNING.mine.blastRadiusTiles * MINE_FLIGHT_RADIUS_FACTOR;
+}
+
+/**
+ * Écart minimal entre deux mines posées par l'IA, en tuiles.
+ *
+ * Deux mines trop rapprochées ferment un couloir dont le poseur ne sort plus :
+ * il fuit la première et entre dans le souffle de la seconde. C'est comme ça
+ * que mourait le jaune, une fois la fuite implémentée.
+ */
+function mineSpacing(): number {
+  return mineFlightRadius() * MINE_SPACING_FACTOR;
+}
+
+/**
+ * Direction de fuite si une mine est trop proche, `null` sinon.
+ *
+ * Symétrique de `findEvasion`, qui ne connaît que les obus. Sans ça, un poseur
+ * de mines finit par se tuer tout seul : il sème, continue de rôder dans le
+ * même coin, et la mèche le rattrape — c'est exactement ce qui arrivait au
+ * jaune, mort en quinze secondes à deux tuiles et demie de sa propre mine.
+ *
+ * Les mines des autres comptent autant que les siennes : une mine tue tout ce
+ * qu'elle atteint, sans regarder qui l'a posée.
+ *
+ * Le rayon de fuite dépasse franchement celui du souffle. S'en tenir au rayon
+ * exact ferait osciller le tank sur la limite, et la limite est mortelle.
+ */
+function findMineEscape(world: World, tank: Tank): { x: number; y: number } | null {
+  if (world.mines.length === 0) return null;
+
+  let x = 0;
+  let y = 0;
+
+  for (const mine of world.mines) {
+    const dx = tank.x - mine.x;
+    const dy = tank.y - mine.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance === 0 || distance > mineFlightRadius()) continue;
+
+    // Poids en inverse de la distance, et non linéaire : pris entre deux mines,
+    // un tank qui les pondérait à parts presque égales partait en biais et
+    // rentrait dans la seconde. La plus proche doit écraser les autres.
+    const weight = 1 / distance;
+    x += (dx / distance) * weight;
+    y += (dy / distance) * weight;
+  }
+
+  const length = Math.hypot(x, y);
+  if (length === 0) return null;
+
+  // La direction radiale est la bonne en terrain libre, et un piège dans une
+  // arène encombrée : le système de mouvement fait glisser le tank le long du
+  // mur, souvent sans jamais le sortir du souffle. On balaie donc de part et
+  // d'autre jusqu'à trouver un dégagement réel — la première direction libre
+  // est aussi la moins détournée, donc celle qui éloigne le plus vite.
+  const radial = Math.atan2(y / length, x / length);
+  const clearance = TUNING.mine.blastRadiusTiles + TUNING.tank.sizeTiles;
+
+  for (const offset of ESCAPE_FAN_RADIANS) {
+    const angle = radial + offset;
+    const free = !boxOverlapsSolid(
+      world.grid,
+      tank.x + Math.cos(angle) * clearance,
+      tank.y + Math.sin(angle) * clearance,
+      TUNING.tank.sizeTiles / 2,
+      blocksTank,
+    );
+    if (free) return { x: Math.cos(angle), y: Math.sin(angle) };
+  }
+
+  // Aucune issue dégagée : on part quand même droit à l'opposé, faute de mieux.
+  return { x: x / length, y: y / length };
+}
+
+/**
+ * Écarts essayés autour de la direction de fuite, du plus direct au plus
+ * détourné. Symétriques, et s'arrêtant au quart de tour : au-delà, on ne
+ * s'éloigne plus de la mine.
+ */
+const ESCAPE_FAN_RADIANS = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2];
+
+/**
+ * Le tank peut-il poser une mine sans se faire sauter avec ?
+ *
+ * Une mine tue son poseur comme n'importe qui, et la première version de cette
+ * logique se contentait de vérifier que le tank « roulait ». Ça ne suffit pas :
+ * un jaune, dont le déplacement alterne charge et errance, colle sa cible,
+ * pose, puis continue de tourner autour d'elle — donc autour de sa mine. Trois
+ * secondes plus tard, il meurt.
+ *
+ * Trois conditions, donc, toutes nécessaires :
+ *
+ *   1. une direction de fuite — un tank arrêté s'assoit sur sa mine ;
+ *   2. cette direction ne bute pas dans un mur au-delà du souffle : une
+ *      intention de déplacement n'est pas un déplacement, et un tank plaqué
+ *      contre un obstacle a beau « avancer », il ne bouge pas ;
+ *   3. la cible n'est pas au contact. C'est le vrai piège : une mine se pose
+ *      pour barrer un chemin, pas pour gagner un corps-à-corps qu'on ne
+ *      quittera pas à temps ;
+ *   4. aucune mine déjà posée à côté — voir `mineSpacing`.
+ */
+function canLeaveMineBehind(
+  world: World,
+  tank: Tank,
+  heading: { x: number; y: number },
+  targetDistance: number,
+): boolean {
+  const length = Math.hypot(heading.x, heading.y);
+  if (length === 0) return false;
+
+  if (targetDistance <= mineFlightRadius()) return false;
+
+  for (const mine of world.mines) {
+    if (Math.hypot(mine.x - tank.x, mine.y - tank.y) < mineSpacing()) return false;
+  }
+
+  // Pas non plus sous le nez d'un allié : trois jaunes lâchés dans la même
+  // arène s'entretuaient en une minute, et la mission se terminait toute seule.
+  for (const other of world.tanks) {
+    if (other.id === tank.id || !other.alive || other.playerId !== null) continue;
+    if (Math.hypot(other.x - tank.x, other.y - tank.y) < mineFlightRadius()) return false;
+  }
+
+  const escape = TUNING.mine.blastRadiusTiles + TUNING.tank.sizeTiles;
+  return !boxOverlapsSolid(
+    world.grid,
+    tank.x + (heading.x / length) * escape,
+    tank.y + (heading.y / length) * escape,
+    TUNING.tank.sizeTiles / 2,
+    blocksTank,
+  );
+}
+
 /** Construit l'intention d'un tank de l'IA pour ce pas. */
 export function decideAiInput(world: World, tank: Tank): InputCommand {
   const profile = profileOf(tank.color);
@@ -144,8 +313,16 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   tank.ai = ai;
 
   if (ai.fireCooldownTicks > 0) ai.fireCooldownTicks--;
+  if (ai.mineCooldownTicks > 0) ai.mineCooldownTicks--;
 
-  const target = findTarget(world, tank, profile);
+  const nearest = findNearestPlayer(world, tank);
+
+  // Deux cibles pour deux usages : le tir ne connaît pas de portée, le
+  // déplacement garde celle du relevé — c'est elle qui donne à chaque couleur
+  // sa façon de tenir la distance.
+  const target = nearest?.tank ?? null;
+  const moveTarget =
+    nearest && nearest.distance <= profile.detectionRangeTiles ? nearest.tank : null;
 
   // ── Visée ──
   // Recalcul périodique et décalé par identifiant, pour lisser le coût.
@@ -172,7 +349,14 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   // partirait dans la direction où le canon se trouve, pas où il vise.
   const aligned =
     Math.abs(normalizeAngle(aim - tank.turretAngle)) <= TUNING.ai.aimToleranceRadians;
-  const fire = ai.solutionAngle !== null && aligned && ai.fireCooldownTicks === 0;
+  // Un profil sans obus autorisé n'essaie même pas : `fireShell` refuserait de
+  // toute façon, mais le dire ici évite qu'un jaune consomme un rechargement
+  // pour un tir qui n'a jamais lieu.
+  const fire =
+    profile.maxActiveShells > 0 &&
+    ai.solutionAngle !== null &&
+    aligned &&
+    ai.fireCooldownTicks === 0;
 
   if (fire) {
     const jitter = profile.fireIntervalJitterSeconds * nextFloat(world.rng);
@@ -186,9 +370,26 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   // s'applique qu'aux tanks réellement mobiles — un brun ou un vert sont des
   // tourelles fixes, et leur faire « tenter » une esquive n'aurait aucun effet
   // tout en brouillant leur comportement.
+  //
+  // Une mine passe avant un obus : on esquive un obus, on ne survit pas à un
+  // souffle de deux tuiles.
   const mobile = profile.speedMultiplier > 0 && profile.movement !== 'hold';
-  const evasion = mobile ? findEvasion(tank, world.shells) : null;
-  const heading = evasion ?? desiredHeading(world, tank, ai, profile, target);
+  const flight = mobile ? findMineEscape(world, tank) : null;
+  const evasion = flight ?? (mobile ? findEvasion(tank, world.shells) : null);
+  const heading = evasion ?? desiredHeading(world, tank, ai, profile, moveTarget);
+
+  // ── Mines ──
+  // Le quota et le rechargement restent ceux de `layMine`, qui a le dernier
+  // mot ; ce qu'on décide ici est seulement l'intention.
+  const laying =
+    profile.mineIntervalSeconds > 0 &&
+    ai.mineCooldownTicks === 0 &&
+    tank.activeMines < profile.maxActiveMines &&
+    canLeaveMineBehind(world, tank, heading, nearest?.distance ?? Infinity);
+
+  if (laying) {
+    ai.mineCooldownTicks = secondsToTicks(profile.mineIntervalSeconds);
+  }
 
   return {
     moveX: heading.x,
@@ -197,7 +398,7 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
     // affichée : la tourelle doit rester lisible pour le joueur.
     aim,
     fire,
-    mine: false,
+    mine: laying,
   };
 }
 

@@ -34,7 +34,7 @@ test('la campagne démarre sur la première mission', async ({ page }) => {
 
   expect(view?.mission).toBe(1);
   expect(view?.missionName).toBe('Champ de tir');
-  expect(view?.totalMissions).toBe(20);
+  expect(view?.totalMissions).toBe(100);
   expect(view?.spares).toBe(3);
   expect(view?.status).toBe('playing');
   // La première mission n'oppose qu'un tank brun, comme dans le relevé de
@@ -54,10 +54,33 @@ test('on peut ouvrir directement une mission donnée', async ({ page }) => {
 });
 
 test('un numéro de mission hors bornes retombe dans la campagne', async ({ page }) => {
-  await page.goto('/?mission=99');
+  // 99 est désormais une mission valide (remixée) : le hors-bornes se teste
+  // au-delà des cent missions de la campagne étendue.
+  await page.goto('/?mission=999');
   await page.waitForFunction(() => window.__tanks?.campaign !== undefined);
 
-  expect((await campaign(page))?.mission).toBe(20);
+  expect((await campaign(page))?.mission).toBe(100);
+});
+
+test('une mission remixée (au-delà de 20) se charge et s\'annonce', async ({ page }) => {
+  await page.goto('/?mission=47');
+  await page.waitForFunction(() => window.__tanks?.campaign !== undefined);
+
+  const view = await campaign(page);
+  expect(view?.mission).toBe(47);
+  // Pas de nom fixe à vérifier ici : c'est une mission générée. Ce qui compte
+  // est qu'elle porte au moins un ennemi et se charge sans erreur.
+  expect(view?.enemiesLeft).toBeGreaterThan(0);
+});
+
+test('le palier 50 charge le tank noir', async ({ page }) => {
+  await page.goto('/?mission=50');
+  await page.waitForFunction(() => window.__tanks?.campaign !== undefined);
+
+  const hasBlackTank = await page.evaluate(
+    () => window.__tanks!.world.tanks.some((tank) => tank.playerId === null && tank.color === 'black'),
+  );
+  expect(hasBlackTank).toBe(true);
 });
 
 test('détruire tous les ennemis fait passer à la mission suivante', async ({ page }) => {
@@ -93,6 +116,22 @@ test('détruire tous les ennemis fait passer à la mission suivante', async ({ p
     return sum;
   });
   expect(painted).toBeGreaterThan(0);
+});
+
+test('vider la centième mission fait basculer la campagne en victoire', async ({ page }) => {
+  // Vérifie le câblage de bout en bout jusqu'à la vraie fin — sans simuler
+  // les cent missions à la suite, ce que les tests unitaires couvrent déjà
+  // pour chacune des cent définitions, en une fraction du temps.
+  await page.goto('/?mission=100');
+  await page.waitForFunction(() => window.__tanks?.campaign !== undefined);
+
+  await destroy(page, 'enemies');
+
+  await page.waitForFunction(() => window.__tanks?.campaign?.status === 'victory', undefined, {
+    timeout: 10_000,
+  });
+
+  expect((await campaign(page))?.mission).toBe(100);
 });
 
 test('perdre son tank consomme la réserve et rejoue la mission', async ({ page }) => {

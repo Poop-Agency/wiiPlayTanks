@@ -530,7 +530,9 @@ describe('impacts', () => {
     target.alive = false;
 
     const shell = addShell(world, { x: 15, y: 10, vx: shellSpeed('normal'), bouncesLeft: 5 });
-    advance(world, 60);
+    // Assez de temps pour dépasser la cible quelle que soit la vitesse : celle-ci
+    // se déduit de la largeur du plateau, qui a déjà changé une fois.
+    advance(world, 90);
 
     // Il a traversé sans être consommé.
     expect(world.shells).toHaveLength(1);

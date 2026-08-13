@@ -118,6 +118,8 @@ export interface TankAiState {
   solutionAngle: number | null;
   /** Ticks avant le prochain tir autorisé. */
   fireCooldownTicks: number;
+  /** Ticks avant la prochaine pose de mine autorisée. */
+  mineCooldownTicks: number;
   /** Direction suivie en patrouille, en radians. */
   roamAngle: number;
   /** Ticks avant de choisir une nouvelle direction de patrouille. */

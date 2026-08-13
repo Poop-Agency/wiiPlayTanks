@@ -72,11 +72,15 @@ describe('profils — conformité aux relevés', () => {
 
   test('les armements correspondent aux valeurs relevées', () => {
     // Relevés sur le jeu original : obus simultanés, ricochets, vitesse.
+    //
+    // Le jaune fait exception : le relevé lui donnait un obus, le vrai jeu ne
+    // lui en donne aucun — il ne tire jamais et ne sème que des mines. Voir
+    // le profil et `docs/provenance.md`.
     const expected: Partial<Record<TankColor, [shells: number, bounces: number, fast: boolean]>> = {
       brown: [1, 1, false],
       ash: [1, 1, false],
       teal: [1, 0, true],
-      yellow: [1, 1, false],
+      yellow: [0, 1, false],
       pink: [3, 1, false],
       green: [2, 2, true],
       purple: [5, 1, false],
@@ -381,16 +385,68 @@ describe('comportement en jeu', () => {
     expect(world.shells).toHaveLength(0);
   });
 
-  test('un ennemi hors de portée ne réagit pas', () => {
-    const world = openWorld(60, 20);
-    const brown = addEnemy(world, 'brown', 55, 10);
-    // Très au-delà de la portée de détection du profil.
+  test('un ennemi tire de loin dès qu\'un angle s\'ouvre', () => {
+    // La portée de détection ne conditionne plus le tir, seulement le
+    // déplacement. Un brun immobile à l'autre bout d'un couloir dégagé doit
+    // ouvrir le feu : rester muet parce que la cible est « trop loin » se lit
+    // comme une panne, pas comme de la prudence.
+    const world = openWorld(30, 20);
+    const brown = addEnemy(world, 'brown', 26, 10);
+    // Vingt-trois tuiles : près de trois fois la portée de détection du profil,
+    // et plus que la diagonale d'une arène de campagne.
     addPlayer(world, 3, 10);
 
-    advance(world, 10 * TICK_RATE);
+    // Compté au vol : le brun a la tourelle la plus lente du jeu (un demi-tour
+    // prend ~6,5 s), et une fois qu'il touche, il n'a plus de cible — regarder
+    // l'état final ne dirait rien de ce qu'il a fait.
+    let fired = 0;
+    let towardsPlayer = 0;
 
-    expect(brown.ai!.solutionAngle).toBeNull();
-    expect(world.shells).toHaveLength(0);
+    for (let i = 0; i < 25 * TICK_RATE; i++) {
+      const before = world.shells.length;
+      tick(world, []);
+      if (world.shells.length > before) {
+        fired++;
+        if (world.shells[world.shells.length - 1]!.vx < 0) towardsPlayer++;
+      }
+    }
+
+    expect(fired).toBeGreaterThan(0);
+    // Et vers le joueur, pas au hasard : c'est bien un angle qui a été trouvé.
+    expect(towardsPlayer).toBe(fired);
+    expect(brown.turretAngle).toBeCloseTo(Math.PI, 1);
+  });
+
+  test('le jaune ne tire jamais : il sème des mines', () => {
+    // Correction du relevé, d'après le vrai jeu : le jaune n'a pas de canon.
+    const world = openWorld(30, 20);
+    addPlayer(world, 6, 10);
+    const yellow = addEnemy(world, 'yellow', 20, 10);
+    const quota = profileOf('yellow').maxActiveMines;
+
+    const laid = new Set<number>();
+
+    for (let i = 0; i < 30 * TICK_RATE; i++) {
+      tick(world, []);
+      expect(world.shells).toHaveLength(0);
+      expect(yellow.activeMines).toBeLessThanOrEqual(quota);
+      for (const mine of world.mines) laid.add(mine.id);
+    }
+
+    expect(laid.size).toBeGreaterThan(0);
+  });
+
+  test('un poseur de mines ne s\'assoit pas sur les siennes', () => {
+    // Une mine tue son poseur comme n'importe qui. Le jaune ne pose qu'en
+    // roulant, et sa vitesse (1,5×) lui laisse trois secondes pour s'écarter
+    // d'un souffle de deux tuiles — largement de quoi.
+    const world = openWorld(30, 20);
+    addPlayer(world, 6, 10);
+    const yellow = addEnemy(world, 'yellow', 20, 10);
+
+    advance(world, 60 * TICK_RATE);
+
+    expect(yellow.alive).toBe(true);
   });
 
   test('respecte le quota d\'obus simultanés de son profil', () => {

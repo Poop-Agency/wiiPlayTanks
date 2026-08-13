@@ -188,18 +188,27 @@ export function boot(params: URLSearchParams): void {
 
     const middle = top + BOARD_BOTTOM_BAND_PX / 2;
 
-    ctx.fillStyle = '#b9a98c';
-    ctx.textAlign = 'left';
-    ctx.fillText('ZQSD · clic tirer · clic droit miner · M son · ~ réglages', 14, middle);
-
     // À droite, et volontairement court : les deux textes partagent une bande de
     // la largeur du plateau, et se chevauchaient dès que l'un des deux s'allongeait.
+    const diagnostics = `${rates.ticksPerSecond} pas/s (${TICK_RATE} attendus) · ${rates.framesPerSecond} img/s`;
+    const available = ctx.canvas.width - 28 - ctx.measureText(diagnostics).width - 16;
+
+    // Le rappel des touches cède du terrain avant les diagnostics : il s'apprend
+    // une fois, eux se relisent. La bande a rétréci avec le plateau (736 → 576 px
+    // au passage en 18 × 18), et la version longue n'y tient plus.
+    const hints = [
+      'ZQSD · clic tirer · clic droit miner · M son · ~ réglages',
+      'ZQSD · clic tirer · clic droit miner · ~ réglages',
+      'ZQSD · clic tirer · clic droit miner',
+      'ZQSD · clic tirer',
+    ];
+
+    ctx.fillStyle = '#b9a98c';
+    ctx.textAlign = 'left';
+    ctx.fillText(hints.find((hint) => ctx.measureText(hint).width <= available) ?? '', 14, middle);
+
     ctx.textAlign = 'right';
-    ctx.fillText(
-      `${rates.ticksPerSecond} pas/s (${TICK_RATE} attendus) · ${rates.framesPerSecond} img/s`,
-      ctx.canvas.width - 14,
-      middle,
-    );
+    ctx.fillText(diagnostics, ctx.canvas.width - 14, middle);
     ctx.restore();
   }
 

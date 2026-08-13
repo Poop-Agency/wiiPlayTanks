@@ -68,6 +68,15 @@ export interface TankProfile {
   fireIntervalJitterSeconds: number;
 
   /**
+   * Délai moyen entre deux poses de mine, en secondes. **0 = ne mine jamais.**
+   *
+   * Séparé de `maxActiveMines`, qui est un quota relevé sur l'original : quatre
+   * couleurs en portent, mais rien ne dit qu'elles s'en servent toutes de la
+   * même façon. Ce champ dit qui mine réellement, et à quelle fréquence.
+   */
+  mineIntervalSeconds: number;
+
+  /**
    * Ouverture du cône d'erreur de visée, en radians.
    *
    * L'écart appliqué est tiré uniformément dans ±moitié de cette valeur.
@@ -115,6 +124,7 @@ const TANK_PROFILES_PLAYER: TankProfile = {
   maxActiveMines: 2,
   fireIntervalSeconds: 0,
   fireIntervalJitterSeconds: 0,
+  mineIntervalSeconds: 0,
   aimErrorRadians: 0,
   detectionRangeTiles: Number.POSITIVE_INFINITY,
   plannedBounces: 0,
@@ -136,6 +146,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 0,
     fireIntervalSeconds: 4,
     fireIntervalJitterSeconds: 4,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.8,
     detectionRangeTiles: STANDARD_RANGE,
     plannedBounces: 0,
@@ -154,6 +165,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 0,
     fireIntervalSeconds: 3,
     fireIntervalJitterSeconds: 2,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.4,
     detectionRangeTiles: LONG_RANGE,
     plannedBounces: 1,
@@ -172,6 +184,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 0,
     fireIntervalSeconds: 2.5,
     fireIntervalJitterSeconds: 0,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.3,
     detectionRangeTiles: STANDARD_RANGE,
     // Un missile ne rebondit pas : chercher un angle à rebonds n'aurait aucun sens.
@@ -181,16 +194,28 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     invisible: false,
   },
 
-  /** Jaune : rapide et imprévisible, mais vise mal. */
+  /**
+   * Jaune : le poseur de mines. Rapide, imprévisible, et **sans canon**.
+   *
+   * Correction du relevé : l'ancienne version lui donnait un obus, ce que le
+   * vrai jeu ne fait pas — le jaune ne tire jamais, il sème des mines et
+   * compte sur le terrain. D'où `maxActiveShells: 0`, qui suffit à interdire
+   * le tir (`fireShell` refuse dès que le quota est atteint), et trois mines
+   * simultanées au lieu de zéro.
+   *
+   * Sa tourelle continue de suivre le joueur : elle est sa seule façon de dire
+   * qu'il vous a repéré, et un jaune au canon figé paraîtrait en panne.
+   */
   yellow: {
     speedMultiplier: 1.5,
     turretRateRadiansPerSecond: perFrameToPerSecond(0.02),
-    maxActiveShells: 1,
+    maxActiveShells: 0,
     shellKind: 'normal',
     shellBounces: 1,
-    maxActiveMines: 0,
+    maxActiveMines: 3,
     fireIntervalSeconds: 1.5,
     fireIntervalJitterSeconds: 2,
+    mineIntervalSeconds: 2.5,
     aimErrorRadians: 0.6,
     detectionRangeTiles: STANDARD_RANGE,
     plannedBounces: 1,
@@ -209,6 +234,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 0,
     fireIntervalSeconds: 1,
     fireIntervalJitterSeconds: 0,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
     plannedBounces: 1,
@@ -230,6 +256,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 0,
     fireIntervalSeconds: 1.8,
     fireIntervalJitterSeconds: 0,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.05,
     detectionRangeTiles: LONG_RANGE,
     plannedBounces: 2,
@@ -248,6 +275,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 2,
     fireIntervalSeconds: 1,
     fireIntervalJitterSeconds: 0,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
     plannedBounces: 1,
@@ -266,6 +294,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 2,
     fireIntervalSeconds: 1,
     fireIntervalJitterSeconds: 0,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
     plannedBounces: 1,
@@ -284,6 +313,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 2,
     fireIntervalSeconds: 0.6,
     fireIntervalJitterSeconds: 0,
+    mineIntervalSeconds: 0,
     aimErrorRadians: 0.25,
     detectionRangeTiles: LONG_RANGE,
     plannedBounces: 0,

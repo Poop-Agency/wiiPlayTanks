@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { REFERENCE_MEASUREMENTS, TILE_SIZE_PX } from '../src/core/tuning';
 import { waitForGame } from './helpers';
 
 // La déclaration de `window.__tanks` vit dans src/client/debug-bridge.ts.
@@ -63,8 +64,10 @@ test('un curseur modifie la simulation en direct', async ({ page }) => {
   const after = await page.evaluate(() => window.__tanks!.tuning.tank.speedTilesPerSecond);
 
   expect(after).toBeLessThan(before);
-  // Quatorze secondes pour 23 tuiles : la conversion doit tomber juste.
-  expect(after).toBeCloseTo(23 / 14, 3);
+  // Quatorze secondes pour traverser l'arène de référence : la conversion doit
+  // tomber juste. La largeur est lue sur la constante plutôt que recopiée — le
+  // plateau a déjà changé de taille une fois.
+  expect(after).toBeCloseTo(REFERENCE_MEASUREMENTS.arenaWidthPx / TILE_SIZE_PX / 14, 3);
 });
 
 test('le tank ralentit réellement après le réglage', async ({ page }) => {

@@ -45,17 +45,29 @@ export const TILE_SIZE_PX = 32;
  * directement.
  * ─────────────────────────────────────────────────────────────────────────── */
 
-/** Largeur de l'arène de référence sur laquelle les temps ont été mesurés. */
-const REFERENCE_ARENA_WIDTH_PX = 736;
+/**
+ * Largeur de l'arène de référence, en tuiles.
+ *
+ * Ce qui a été mesuré sur le vrai jeu, ce sont des **durées de traversée** :
+ * quatre secondes pour un obus, sept pour un tank. La vitesse en tuiles par
+ * seconde s'en déduit, et dépend donc de la largeur du plateau.
+ *
+ * Cette largeur valait 23 (736 px ÷ 32), déduite d'un relevé de calibration en
+ * pixels. Elle vaut maintenant 18, comptée en blocs sur une capture — voir
+ * `shared/missions/missions.ts`. Suivre ce changement est ce qui garde vraies
+ * les durées mesurées ; les figer aurait fait traverser l'arène en 3,1 s au
+ * lieu des 4 s relevées.
+ *
+ * Recopié plutôt qu'importé de `ARENA_WIDTH_TILES` : `src/core/` ne dépend de
+ * rien, et surtout pas de `shared/`, qui dépend déjà de lui.
+ */
+const REFERENCE_ARENA_WIDTH_TILES = 18;
 
 /** Temps mis par un obus normal pour traverser l'arène de référence. */
 const SHELL_CROSSING_SECONDS = 4;
 
 /** Temps mis par le tank du joueur pour traverser l'arène de référence. */
 const TANK_CROSSING_SECONDS = 7;
-
-/** Largeur de l'arène de référence, exprimée en tuiles. */
-const REFERENCE_ARENA_WIDTH_TILES = REFERENCE_ARENA_WIDTH_PX / TILE_SIZE_PX;
 
 /** Vitesse dérivée d'un temps de traversée, en tuiles par seconde. */
 const speedFromCrossing = (seconds: number): number =>
@@ -66,7 +78,7 @@ const speedFromCrossing = (seconds: number): number =>
  * panneau de calibration (#10).
  */
 export const REFERENCE_MEASUREMENTS = {
-  arenaWidthPx: REFERENCE_ARENA_WIDTH_PX,
+  arenaWidthPx: REFERENCE_ARENA_WIDTH_TILES * TILE_SIZE_PX,
   shellCrossingSeconds: SHELL_CROSSING_SECONDS,
   tankCrossingSeconds: TANK_CROSSING_SECONDS,
 } as const;

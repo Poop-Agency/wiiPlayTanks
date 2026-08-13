@@ -283,6 +283,22 @@ function drawNextRoundRecap(ctx: CanvasRenderingContext2D, view: CampaignView): 
   ctx.restore();
 }
 
+/**
+ * Tronque un texte à la largeur disponible, avec des points de suspension.
+ *
+ * Rendu vide plutôt qu'un « … » solitaire quand la place manque tout à fait :
+ * un texte illisible ne vaut pas mieux que pas de texte, et il mordrait sur ce
+ * qui est à côté.
+ */
+function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return '';
+  if (ctx.measureText(text).width <= maxWidth) return text;
+
+  let cut = text.length;
+  while (cut > 0 && ctx.measureText(`${text.slice(0, cut)}…`).width > maxWidth) cut--;
+  return cut > 0 ? `${text.slice(0, cut)}…` : '';
+}
+
 /** Dessine le HUD par-dessus l'image de jeu. */
 export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void {
   if (view.lobby) {
@@ -306,19 +322,35 @@ export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void
   const coop = view.teammates.length > 0;
   const middle = coop ? 13 : BAND_HEIGHT / 2;
 
+  // ─── Trois blocs sur une ligne, mesurés plutôt que posés à des x fixes ───
+  //
+  // Le bandeau fait la largeur du plateau, et celui-ci a déjà rétréci une fois
+  // (736 → 576 px, quand la campagne est passée en 18 × 18). Les positions
+  // fixes qui tenaient à 736 se chevauchaient à 576 : le nom de mission
+  // mordait sur la réserve, la réserve sur le décompte d'obus. On mesure donc,
+  // et c'est le bloc de droite — le seul qu'on lit vraiment en jeu — qui
+  // commande la place laissée aux deux autres.
+
+  ctx.textAlign = 'left';
   ctx.fillStyle = HUD.text;
   ctx.font = 'bold 14px ui-monospace, monospace';
-  ctx.textAlign = 'left';
-  ctx.fillText(`MISSION ${view.mission}/${view.totalMissions}`, 14, middle);
+  const label = `MISSION ${view.mission}/${view.totalMissions}`;
+  ctx.fillText(label, 14, middle);
+  const nameStart = 14 + ctx.measureText(label).width + 10;
 
-  ctx.fillStyle = HUD.textDim;
-  ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText(view.missionName, 132, middle);
+  ctx.font = '13px ui-monospace, monospace';
+  const stats =
+    `obus ${view.activeShells}/${view.maxShells} · ` +
+    `mines ${view.activeMines}/${view.maxMines} · ` +
+    `ennemis ${view.enemiesLeft}`;
+  const statsStart = width - 14 - ctx.measureText(stats).width;
 
   // Réserve, au centre : la seule information qu'on cherche du regard en
-  // pleine partie, donc à l'endroit le plus lisible du bandeau.
+  // pleine partie, donc à l'endroit le plus lisible du bandeau — ramenée vers
+  // la gauche si le décompte d'obus vient jusque-là.
   const pips = Math.min(view.spares, 6);
-  const pipsStart = width / 2 - ((pips - 1) * 16) / 2;
+  const pipsSpan = Math.max(pips - 1, 0) * 16;
+  const pipsStart = Math.min(width / 2 - pipsSpan / 2, statsStart - 14 - pipsSpan);
   for (let index = 0; index < pips; index++) {
     drawTankPip(ctx, pipsStart + index * 16, middle, true);
   }
@@ -328,6 +360,14 @@ export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void
     ctx.textAlign = 'left';
     ctx.fillText(`+${view.spares - 6}`, pipsStart + pips * 16, middle);
   }
+
+  // Le nom de mission prend ce qui reste, et s'abrège s'il n'y tient pas :
+  // c'est la seule des trois informations dont la troncature ne coûte rien.
+  ctx.fillStyle = HUD.textDim;
+  ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(ellipsize(ctx, view.missionName, pipsStart - 12 - nameStart), nameStart, middle);
+
   if (view.spares === 0) {
     ctx.fillStyle = HUD.bannerFailure;
     ctx.font = 'bold 12px ui-monospace, monospace';
@@ -335,14 +375,10 @@ export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void
     ctx.fillText('DERNIER TANK', width / 2, middle);
   }
 
-  ctx.textAlign = 'right';
+  ctx.textAlign = 'left';
   ctx.fillStyle = HUD.text;
   ctx.font = '13px ui-monospace, monospace';
-  ctx.fillText(
-    `obus ${view.activeShells}/${view.maxShells}   mines ${view.activeMines}/${view.maxMines}   ennemis ${view.enemiesLeft}`,
-    width - 14,
-    middle,
-  );
+  ctx.fillText(stats, statsStart, middle);
 
   if (coop) {
     ctx.fillStyle = HUD.textDim;

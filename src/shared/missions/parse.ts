@@ -29,8 +29,15 @@ const TILE_SYMBOLS: Readonly<Record<string, TileKind>> = {
   H: TileKind.Hole,
 };
 
-/** Caractère → couleur de tank ennemi. */
-const ENEMY_SYMBOLS: Readonly<Record<string, TankColor>> = {
+/**
+ * Caractère → couleur de tank ennemi.
+ *
+ * Exportée pour que `generate.ts` (missions remixées, #100-missions) puisse
+ * retrouver la lettre d'une couleur sans dupliquer cette table — une deuxième
+ * copie aurait fini par diverger de celle-ci sans qu'aucun test ne le
+ * remarque.
+ */
+export const ENEMY_SYMBOLS: Readonly<Record<string, TankColor>> = {
   b: 'brown',
   a: 'ash',
   t: 'teal',
