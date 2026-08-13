@@ -75,20 +75,28 @@ describe('profils — conformité aux relevés', () => {
     rebonds: number;
     roquette: boolean;
     mines: number;
+    /**
+     * Anticipation d'esquive attendue.
+     *
+     * La fiche ne parle d'esquive que pour deux couleurs — « parfois » pour le
+     * cendre, « activement » pour le noir. Les deux valeurs marquées ⚠ sont
+     * déduites de leur description d'« IA avancée », pas relevées.
+     */
+    esquive: number;
   }
 
   const FICHE: Record<string, Sheet> = {
-    //                vitesse  obus  rebonds  roquette  mines
-    player: { vitesse: 1.0, obus: 5, rebonds: 1, roquette: false, mines: 2 },
-    brown: { vitesse: 0.0, obus: 1, rebonds: 1, roquette: false, mines: 0 },
-    ash: { vitesse: 0.7, obus: 1, rebonds: 1, roquette: false, mines: 0 },
-    teal: { vitesse: 0.7, obus: 1, rebonds: 0, roquette: true, mines: 0 },
-    yellow: { vitesse: 1.3, obus: 1, rebonds: 1, roquette: false, mines: 4 },
-    pink: { vitesse: 1.0, obus: 3, rebonds: 1, roquette: false, mines: 0 },
-    green: { vitesse: 0.0, obus: 2, rebonds: 2, roquette: true, mines: 0 },
-    purple: { vitesse: 1.3, obus: 5, rebonds: 1, roquette: false, mines: 2 },
-    white: { vitesse: 1.0, obus: 5, rebonds: 1, roquette: false, mines: 2 },
-    black: { vitesse: 1.7, obus: 2, rebonds: 0, roquette: true, mines: 2 },
+    //                vitesse  obus  rebonds  roquette  mines  esquive
+    player: { vitesse: 1.0, obus: 5, rebonds: 1, roquette: false, mines: 2, esquive: 0 },
+    brown: { vitesse: 0.0, obus: 1, rebonds: 1, roquette: false, mines: 0, esquive: 0 },
+    ash: { vitesse: 0.7, obus: 1, rebonds: 1, roquette: false, mines: 0, esquive: 0.25 },
+    teal: { vitesse: 0.7, obus: 1, rebonds: 0, roquette: true, mines: 0, esquive: 0 },
+    yellow: { vitesse: 1.3, obus: 1, rebonds: 1, roquette: false, mines: 4, esquive: 0 },
+    pink: { vitesse: 1.0, obus: 3, rebonds: 1, roquette: false, mines: 0, esquive: 0 },
+    green: { vitesse: 0.0, obus: 2, rebonds: 2, roquette: true, mines: 0, esquive: 0 },
+    purple: { vitesse: 1.3, obus: 5, rebonds: 1, roquette: false, mines: 2, esquive: 0.6 }, // ⚠
+    white: { vitesse: 1.0, obus: 5, rebonds: 1, roquette: false, mines: 2, esquive: 0.6 }, // ⚠
+    black: { vitesse: 1.7, obus: 2, rebonds: 0, roquette: true, mines: 2, esquive: 1 },
   };
 
   test.each(Object.entries(FICHE))('%s est conforme à la fiche', (color, fiche) => {
@@ -99,6 +107,27 @@ describe('profils — conformité aux relevés', () => {
     expect(profile.shellBounces).toBe(fiche.rebonds);
     expect(profile.shellKind).toBe(fiche.roquette ? 'fast' : 'normal');
     expect(profile.maxActiveMines).toBe(fiche.mines);
+    expect(profile.evasionSkill).toBe(fiche.esquive);
+  });
+
+  test('la moitié faible de la campagne n\'esquive pas', () => {
+    // Le vrai sujet de ce test : l'esquive avait été ouverte à tous les tanks
+    // mobiles, ce qui rendait le turquoise, le jaune et le rose bien plus durs
+    // à toucher que dans l'original. Ce sont les couleurs des vingt premières
+    // missions — celles où l'on apprend à jouer.
+    for (const color of ['brown', 'teal', 'yellow', 'pink', 'green'] as const) {
+      expect(profileOf(color).evasionSkill).toBe(0);
+    }
+  });
+
+  test('le noir est le seul à esquiver pleinement', () => {
+    const better = Object.entries(TANK_PROFILES)
+      .filter(([color]) => color !== 'black')
+      .filter(([, profile]) => profile.evasionSkill >= profileOf('black').evasionSkill);
+
+    expect(better).toEqual([]);
+    expect(profileOf('ash').evasionSkill).toBeGreaterThan(0);
+    expect(profileOf('ash').evasionSkill).toBeLessThan(profileOf('purple').evasionSkill);
   });
 
   test('les mines de la fiche sont réellement posées', () => {
@@ -637,6 +666,9 @@ describe('comportements propres à chaque couleur', () => {
 });
 
 describe('esquive', () => {
+  /** Anticipation maximale : celle du noir, seul profil à `evasionSkill: 1`. */
+  const FULL_HORIZON = TUNING.ai.evasionHorizonSeconds;
+
   test('un obus qui arrive de face déclenche un écart perpendiculaire', () => {
     const world = openWorld();
     const tank = addPlayer(world, 20, 10);
@@ -653,7 +685,7 @@ describe('esquive', () => {
       armed: true,
     });
 
-    const evasion = findEvasion(tank, world.shells);
+    const evasion = findEvasion(tank, world.shells, FULL_HORIZON);
 
     expect(evasion).not.toBeNull();
     // Perpendiculaire à un obus horizontal : uniquement vertical.
@@ -677,7 +709,7 @@ describe('esquive', () => {
       armed: true,
     });
 
-    expect(findEvasion(tank, world.shells)).toBeNull();
+    expect(findEvasion(tank, world.shells, FULL_HORIZON)).toBeNull();
   });
 
   test('un obus qui passe largement à côté ne déclenche rien', () => {
@@ -696,7 +728,82 @@ describe('esquive', () => {
       armed: true,
     });
 
-    expect(findEvasion(tank, world.shells)).toBeNull();
+    expect(findEvasion(tank, world.shells, FULL_HORIZON)).toBeNull();
+  });
+
+  /**
+   * Taux de survie d'une couleur à un obus tiré à deux tuiles, sur vingt
+   * graines.
+   *
+   * Sans joueur dans le monde, le tank patrouille : un tank qui n'esquive pas
+   * peut donc s'en sortir **par chance**, s'étant trouvé hors du couloir au bon
+   * moment. D'où un taux mesuré sur plusieurs graines et non une mort unique —
+   * et d'où le turquoise comme témoin, à la fois lent et incapable d'esquiver.
+   *
+   * Deux précautions, apprises en construisant ce harnais :
+   *
+   *   - **La pose de mines est neutralisée.** Sans ça, le noir sème une mine
+   *     sous ses chenilles, l'obus la fait détoner et le souffle le tue à une
+   *     tuile et demie : on mesurait la portée du souffle, pas l'esquive.
+   *   - **La fenêtre s'arrête quand l'obus a dépassé le tank.** Laisser courir
+   *     une seconde entière laissait les tanks rapides revenir se jeter dans la
+   *     trajectoire pendant leur patrouille, ce qui inversait le classement.
+   */
+  function survivalRate(color: TankColor): number {
+    /** Ticks au bout desquels l'obus a franchi l'abscisse de départ du tank. */
+    const WINDOW_TICKS = 30;
+    const SEEDS = 20;
+    let survived = 0;
+
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const world = createWorld({ width: 30, height: 20, seed });
+      const tank = addEnemy(world, color, 20, 10);
+      if (tank.ai) tank.ai.mineCooldownTicks = Number.MAX_SAFE_INTEGER;
+
+      world.shells.push({
+        id: allocateEntityId(world),
+        ownerId: -1,
+        kind: 'normal',
+        x: 18,
+        y: 10,
+        vx: 5,
+        vy: 0,
+        bouncesLeft: 1,
+        armed: true,
+      });
+
+      advance(world, WINDOW_TICKS);
+      if (tank.alive) survived++;
+    }
+
+    return survived / SEEDS;
+  }
+
+  test('seuls les trois derniers tanks se dégagent à tous les coups', () => {
+    for (const color of ['purple', 'white', 'black'] as const) {
+      expect(survivalRate(color)).toBe(1);
+    }
+  });
+
+  test('une tourelle fixe encaisse toujours', () => {
+    // Repère bas de l'échelle : sans déplacement, ni esquive ni chance.
+    expect(survivalRate('brown')).toBe(0);
+    expect(survivalRate('green')).toBe(0);
+  });
+
+  test('le turquoise, le jaune et le rose ne se dégagent que par chance', () => {
+    // Le cœur de la correction : ces trois-là esquivaient parfaitement, ce qui
+    // rendait la moitié faible de la campagne bien plus retorse que
+    // l'original. Ils encaissent maintenant une bonne partie des obus.
+    for (const color of ['teal', 'yellow', 'pink'] as const) {
+      expect(survivalRate(color)).toBeLessThanOrEqual(0.8);
+    }
+  });
+
+  test('le cendre esquive parfois : mieux que la chance, moins bien que le noir', () => {
+    // Le turquoise sert de témoin : même vitesse que le cendre, aucune esquive.
+    expect(survivalRate('ash')).toBeGreaterThan(survivalRate('teal'));
+    expect(survivalRate('ash')).toBeLessThan(1);
   });
 
   test('un tank n\'esquive pas son propre obus', () => {
@@ -715,7 +822,7 @@ describe('esquive', () => {
       armed: true,
     });
 
-    expect(findEvasion(tank, world.shells)).toBeNull();
+    expect(findEvasion(tank, world.shells, FULL_HORIZON)).toBeNull();
   });
 });
 

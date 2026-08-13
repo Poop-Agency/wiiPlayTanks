@@ -118,6 +118,21 @@ export interface TankProfile {
    */
   leadsTarget: boolean;
 
+  /**
+   * Anticipation de l'esquive, en fraction de `TUNING.ai.evasionHorizonSeconds`.
+   * **0 = n'esquive jamais**, 1 = pleine anticipation.
+   *
+   * Multiplicateur plutôt que durée absolue, pour que le panneau de calibration
+   * garde la main sur l'échelle globale sans avoir à retoucher neuf profils.
+   *
+   * Le relevé n'attribue l'esquive qu'à deux couleurs — « parfois » pour le
+   * cendre, « activement » pour le noir. Une valeur intermédiaire ne veut pas
+   * dire « une fois sur deux » : elle veut dire *prévenu plus tard*, donc trop
+   * tard pour se dégager quand l'obus est rapide ou le châssis lent. Le hasard
+   * n'a pas sa place ici, le noyau devant rester déterministe.
+   */
+  evasionSkill: number;
+
   /** Nombre de rebonds que l'IA envisage en cherchant un angle de tir. */
   plannedBounces: number;
 
@@ -161,6 +176,8 @@ const TANK_PROFILES_PLAYER: TankProfile = {
   detectionRangeTiles: Number.POSITIVE_INFINITY,
   firingRangeTiles: Number.POSITIVE_INFINITY,
   leadsTarget: false,
+  // Sans objet : c'est un humain qui décide de s'écarter ou non.
+  evasionSkill: 0,
   plannedBounces: 0,
   movement: 'hold',
   preferredRangeTiles: 0,
@@ -185,6 +202,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: STANDARD_RANGE,
     leadsTarget: false,
+    // Immobile : la question ne se pose pas.
+    evasionSkill: 0,
     plannedBounces: 0,
     movement: 'hold',
     preferredRangeTiles: 0,
@@ -206,6 +225,11 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: LONG_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: false,
+    // « Esquive parfois ». Réglé à la mesure : à 0,25 il survit à six obus sur
+    // dix, là où un tank de même vitesse qui n'esquive pas s'en tire trois fois
+    // sur dix par la seule grâce de sa patrouille. Au-dessus de 0,3 il devient
+    // presque intouchable, ce qui n'est plus « parfois ».
+    evasionSkill: 0.25,
     plannedBounces: 1,
     movement: 'hunt',
     preferredRangeTiles: 5,
@@ -227,6 +251,9 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: false,
+    // Le relevé ne lui prête aucune esquive : il cherche sa ligne, il ne
+    // regarde pas ce qui vient.
+    evasionSkill: 0,
     // Un missile ne rebondit pas : chercher un angle à rebonds n'aurait aucun sens.
     plannedBounces: 0,
     movement: 'seekLine',
@@ -259,6 +286,9 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: false,
+    // Aucune esquive : s'il survit à un obus, c'est que sa trajectoire
+    // erratique l'avait déjà sorti du couloir, pas qu'il l'a vu venir.
+    evasionSkill: 0,
     plannedBounces: 1,
     movement: 'erratic',
     preferredRangeTiles: 4,
@@ -280,6 +310,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: false,
+    // Aucune esquive : il fonce, c'est tout son propos.
+    evasionSkill: 0,
     plannedBounces: 1,
     movement: 'hunt',
     preferredRangeTiles: 3,
@@ -304,6 +336,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: LONG_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: false,
+    // Immobile : la question ne se pose pas.
+    evasionSkill: 0,
     plannedBounces: 2,
     movement: 'hold',
     preferredRangeTiles: 0,
@@ -325,6 +359,11 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: false,
+    // ⚠ Déduit, pas relevé : la fiche ne mentionne l'esquive ni pour le violet
+    // ni pour le blanc, mais leur prête une « IA avancée ». On leur laisse une
+    // anticipation partielle, en retrait de celle du noir, à qui le relevé
+    // réserve explicitement l'esquive active.
+    evasionSkill: 0.6,
     plannedBounces: 1,
     movement: 'flank',
     preferredRangeTiles: 3,
@@ -346,6 +385,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: false,
+    // ⚠ Déduit comme celle du violet, dont il partage l'armement.
+    evasionSkill: 0.6,
     plannedBounces: 1,
     movement: 'hunt',
     preferredRangeTiles: 4,
@@ -367,6 +408,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     detectionRangeTiles: LONG_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
     leadsTarget: true,
+    // « Esquive activement » : pleine anticipation, la seule du jeu.
+    evasionSkill: 1,
     plannedBounces: 0,
     movement: 'hunt',
     preferredRangeTiles: 3,

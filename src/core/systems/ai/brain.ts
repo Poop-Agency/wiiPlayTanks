@@ -475,10 +475,21 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   // tout en brouillant leur comportement.
   //
   // Une mine passe avant un obus : on esquive un obus, on ne survit pas à un
-  // souffle de deux tuiles.
+  // souffle de deux tuiles. La fuite devant les mines, elle, reste ouverte à
+  // tous les mobiles quel que soit leur `evasionSkill` : c'est de la
+  // conservation, pas du talent — sans elle le jaune se tue dans son propre
+  // champ, ce qui ne ressemble à rien.
   const mobile = profile.speedMultiplier > 0 && profile.movement !== 'hold';
   const flight = mobile ? findMineEscape(world, tank) : null;
-  const evasion = flight ?? (mobile ? findEvasion(tank, world.shells) : null);
+  const evasion =
+    flight ??
+    (mobile
+      ? findEvasion(
+          tank,
+          world.shells,
+          TUNING.ai.evasionHorizonSeconds * profile.evasionSkill,
+        )
+      : null);
   const heading = evasion ?? desiredHeading(world, tank, ai, profile, moveTarget);
 
   // ── Mines ──

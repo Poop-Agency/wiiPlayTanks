@@ -400,6 +400,47 @@ Quatre comportements qu'elle décrit n'existaient pas dans le code :
 - **Le Gris suit.** Il gardait ses distances, ce qui était l'inverse de ce que
   la fiche décrit.
 
+### L'esquive n'appartient qu'à deux couleurs
+
+`findEvasion` s'appliquait à **tous** les tanks mobiles, avec le même horizon
+d'anticipation d'une seconde — largement de quoi sortir du couloir de tir. Le
+turquoise, le jaune et le rose étaient donc aussi difficiles à toucher que le
+noir, ce qui rendait la moitié faible de la campagne bien plus retorse que
+l'original. Or la fiche ne mentionne l'esquive que deux fois : le Gris
+« esquive parfois », le Noir « esquive activement ».
+
+L'anticipation est devenue un réglage de profil, `evasionSkill`, exprimé en
+fraction de `TUNING.ai.evasionHorizonSeconds` pour que le panneau de
+calibration garde la main sur l'échelle globale. **Zéro pour six couleurs sur
+neuf.**
+
+Ce n'est délibérément **pas** une probabilité : le noyau doit rester
+déterministe, et un tirage au sort par obus ferait vibrer le tank à l'écran.
+Une valeur intermédiaire veut dire *prévenu plus tard*, donc trop tard pour se
+dégager quand le châssis est lent — il faut environ une largeur de châssis de
+décalage pour sortir du couloir.
+
+Taux de survie à un obus tiré à deux tuiles, sur 20 graines, mines neutralisées
+et fenêtre arrêtée au passage de l'obus (`tests/ai.test.ts`) :
+
+| Brun | Vert | Turquoise | Gris | Rose | Jaune | Violet | Blanc | Noir |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 % | 0 % | 35 % | 60 % | 70 % | 75 % | 100 % | 100 % | 100 % |
+
+Les tourelles fixes encaissent toujours. **Le Rose et le Jaune passent devant
+le Gris sans esquiver du tout** : à 100 % et 130 % de vitesse, leur patrouille
+les sort du couloir plus souvent qu'elle n'y ramène le Gris, qui est à 70 %.
+C'est une chance, pas un talent, et c'est pourquoi le témoin utile est le
+Turquoise — même vitesse que le Gris, aucune esquive, 35 %. Le Gris est réglé à
+0,25 pour se tenir nettement au-dessus de ce témoin sans devenir intouchable :
+au-delà de 0,3 il passe à 95 %, ce qui n'est plus « parfois ».
+
+⚠ **Le Violet et le Blanc sont déduits, pas relevés.** La fiche ne leur prête
+aucune esquive ; elle leur prête une « IA avancée ». On leur laisse une
+anticipation partielle (0,6), en retrait du Noir à qui l'esquive active est
+explicitement réservée. C'est le seul choix de cette passe qui ne vienne pas
+de la fiche.
+
 ### Le brun a retrouvé une portée de tir
 
 Supprimer la limite de portée sur le tir (voir plus bas) avait produit un excès

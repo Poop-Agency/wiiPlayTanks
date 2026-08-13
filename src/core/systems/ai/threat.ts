@@ -1,9 +1,12 @@
 /**
  * Détection et esquive des obus entrants.
  *
- * Sans cela, un tank ennemi encaisse passivement tout ce qu'on lui envoie, ce
- * qui rend les missions triviales dès qu'on a compris les angles. Dans
- * l'original, les tanks mobiles se décalent quand un obus arrive sur eux.
+ * Dans l'original, l'esquive est le privilège de deux couleurs seulement : le
+ * cendre s'écarte parfois, le noir systématiquement. Toutes les autres
+ * encaissent. L'ouvrir à tous les tanks mobiles paraissait plus vivant, mais
+ * rendait le turquoise, le jaune et le rose bien plus retors que l'original —
+ * on ne touchait plus rien de la moitié faible de la campagne. Qui esquive, et
+ * avec quelle anticipation, se lit donc dans `profiles.ts`.
  */
 
 import { TUNING } from '../../tuning.js';
@@ -37,8 +40,25 @@ export interface EvasionVector {
  * On ne considère que la trajectoire **actuelle** de l'obus, sans ses rebonds à
  * venir : anticiper un ricochet donnerait à l'IA une prescience que le joueur
  * n'a pas, et rendrait les tanks agaçants plutôt que vivants.
+ *
+ * `horizonSeconds` est l'anticipation propre au tank, et c'est **elle seule**
+ * qui fait la différence entre un esquiveur et une cible. Un obus qui arrivera
+ * plus tard est ignoré : le tank ne l'a pas encore « vu ». Réagir tard ne rate
+ * pas l'esquive par tirage au sort, mais par manque de temps — il faut environ
+ * une largeur de châssis de décalage pour sortir du couloir, et un tank lent
+ * prévenu au dernier moment ne l'a pas. C'est ce qui donne au cendre son
+ * « esquive parfois » sans introduire de hasard, et donc sans compromettre le
+ * déterminisme du noyau.
+ *
+ * À zéro, la fonction rend toujours `null` : le tank encaisse.
  */
-export function findEvasion(tank: Tank, shells: readonly Shell[]): EvasionVector | null {
+export function findEvasion(
+  tank: Tank,
+  shells: readonly Shell[],
+  horizonSeconds: number,
+): EvasionVector | null {
+  if (horizonSeconds <= 0) return null;
+
   let closestTime = Number.POSITIVE_INFINITY;
   let evasion: EvasionVector | null = null;
 
@@ -60,7 +80,7 @@ export function findEvasion(tank: Tank, shells: readonly Shell[]): EvasionVector
     // Derrière l'obus, ou trop loin devant pour être une menace immédiate.
     if (along <= 0) continue;
     const timeToReach = along / speed;
-    if (timeToReach > TUNING.ai.evasionHorizonSeconds || timeToReach >= closestTime) continue;
+    if (timeToReach > horizonSeconds || timeToReach >= closestTime) continue;
 
     // Écart latéral : l'obus passe-t-il assez près pour toucher ?
     const lateral = toTankX * -dirY + toTankY * dirX;
