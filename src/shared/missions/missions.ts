@@ -112,10 +112,10 @@ const CAMPAIGN_TOTAL_MISSIONS = 100;
  * sécurité au départ. L'original place parfois un adversaire tout près du
  * joueur, et c'est un choix de game design, pas un défaut à corriger.
  *
- * Les tracés restants (1, 2 et 6 à 20) attendent leurs captures ; la liste
+ * Les tracés restants (1, 2 et 9 à 20) attendent leurs captures ; la liste
  * grandit à mesure qu'on les relève.
  */
-export const TRANSCRIBED_MISSION_IDS: ReadonlySet<number> = new Set([3, 4, 5]);
+export const TRANSCRIBED_MISSION_IDS: ReadonlySet<number> = new Set([3, 4, 5, 6, 7, 8]);
 
 /** Les vingt missions d'origine, tracés uniques écrits à la main. */
 const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
@@ -135,9 +135,9 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
 #....#...#.......#
 #....#...#.......#
 #........X.......#
-#..1.#...#.....b.#
+#.1..#...X.....b.#
 #....#...#.......#
-#................#
+#........#.......#
 #................#
 #................#
 #................#
@@ -240,20 +240,20 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
     grid: `
 ##################
 #................#
-#................#
 #...........t....#
 #................#
-#...........XX...#
+#...........X....#
+#...........#X...#
 #................#
 #................#
+#................#
+#..............t.#
+#................#
+#................#
+#................#
+#...X#...........#
 #....X...........#
-#..1.X.........t.#
-#................#
-#................#
-#................#
-#................#
-#................#
-#................#
+#..1.............#
 #................#
 ##################
 `,
@@ -261,27 +261,40 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 6,
     name: 'Entre deux murs',
-    // Relevé sur capture du vrai jeu : deux longues barres horizontales,
-    // pleines aux extrémités et cassables au centre, enferment une bande
-    // médiane qu'une file de trous coupe en deux. Les quatre adversaires
-    // tiennent le flanc droit.
+    // Relevé sur capture du vrai jeu, décrit rangée par rangée plutôt que lu
+    // sur l'image — la perspective de la capture rendait le comptage faux.
+    //
+    // Deux rangées libres en haut, deux en bas. La troisième de chaque côté
+    // porte une barre pleine avec deux blocs cassables. Au milieu, une faille
+    // de cinq trous, décalée d'une colonne vers la droite, puis cinq de plus
+    // vers le bas.
+    //
+    // Les deux barres ne vont pas d'un bord à l'autre, et c'est structurel :
+    // une barre pleine couperait l'arène en trois bandes étanches, et
+    // l'adversaire de la bande du bas deviendrait inatteignable. Le passage
+    // est à gauche en haut, à droite en bas — ce que montre aussi la capture,
+    // où les barres s'arrêtent avant le mur d'enceinte.
+    //
+    // Les deux files de trous, elles, se rejoignent en diagonale : la boîte du
+    // tank ne passe pas entre deux coins qui se touchent, donc la bande
+    // médiane est bel et bien coupée en deux. On en fait le tour par le bas.
     grid: `
 ##################
 #................#
 #................#
-#................#
-#....##XX####....#
-#..............a.#
-#................#
+#...#X#X######...#
+#.......H.....a..#
 #.......H........#
 #.......H........#
-#..1....H......t.#
 #.......H........#
-#....##XX####....#
-#................#
-#..............t.#
+#.......HH.....t.#
+#..1.....H.......#
+#........H.......#
+#........H.......#
+#........H.....t.#
+#........H.......#
+#..#######X#X#...#
 #............a...#
-#................#
 #................#
 ##################
 `,
@@ -289,25 +302,30 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 7,
     name: 'Les chicanes',
-    // Relevé sur capture du vrai jeu : quatre barres décalées en quinconce,
-    // alternativement à gauche et à droite, chacune pleine aux bouts et
-    // cassable au milieu. On ne traverse jamais en ligne droite.
+    // Relevé sur capture du vrai jeu : des étagères adossées aux murs
+    // latéraux, décalées en hauteur d'un côté à l'autre. Trois à gauche
+    // (rangées 3, 7 et 10), deux à droite (6 et 11), plus une barre en bas.
+    // Chacune porte un bloc cassable.
+    //
+    // Aucune ne traverse : le couloir central reste ouvert, et c'est par lui
+    // qu'on passe d'une moitié à l'autre. Le joueur part en bas à gauche, les
+    // quatre sarcelle sont réparties de part et d'autre.
     grid: `
 ##################
 #................#
-#.....t..........#
-#.##XX###.....t..#
-#................#
-#.....t..........#
-#........###XX##.#
+#..t..........t..#
 #................#
 #................#
-#.##XX#..........#
+###X###..........#
+#..........###X###
 #................#
-#..1.....###XX##.#
+#.t..............#
 #................#
-#.............t..#
 #................#
+###X###..........#
+#..........###X###
+#................#
+#.1............t.#
 #................#
 #................#
 ##################
@@ -316,26 +334,31 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 8,
     name: 'Les piliers',
-    // Relevé sur capture du vrai jeu : des piliers isolés, courts et de
-    // matières mêlées, éparpillés en diagonale du coin du joueur vers le coin
-    // opposé. Les cinq adversaires tiennent le bord droit, en file.
+    // Relevé sur capture du vrai jeu : une arène symétrique. De chaque côté,
+    // une colonne verticale en trois tronçons décalés d'une case — cassable
+    // en haut et en bas, plein au milieu. Entre les deux, une barre courte en
+    // haut et une en bas, cassables aux extrémités et pleines au centre.
+    //
+    // ⚠ La capture est rognée à gauche et à droite : le joueur et les trois
+    // sarcelle y sont coupés par le bord de l'image. Les marges latérales sont
+    // donc déduites, pas relevées.
     grid: `
 ##################
 #................#
-#..........y.....#
-#......###.....t.#
-#..X.............#
-#..X...........X.#
-#..X.............#
-#.....X..##....y.#
-#.....X..##......#
-#..1.....##......#
-#.......XX...y...#
 #................#
-#........####..t.#
+#..X...X##X...X.t#
+#..X..........X..#
+#..XX......y.XX..#
+#...X........X...#
+#...#........#...#
+#1..#........#.y.#
+#...#........#...#
+#...X........X...#
+#..XX........XX..#
+#..X..........X..#
+#..X...X##X.y.X..#
 #................#
-#................#
-#................#
+#...............t#
 #................#
 ##################
 `,
