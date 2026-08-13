@@ -356,20 +356,83 @@ multiplicateurs de vitesse conservés tels quels, rotations de tourelle passées
 de radians par image à radians par seconde. Le détail et les deux réserves
 figurent en tête du fichier.
 
+### La fiche de référence remplace le relevé sur six couleurs
+
+Une fiche de référence complète des dix tanks a été fournie par l'auteur du
+projet. Sur six couleurs elle contredit les valeurs portées ici, qui se
+présentaient comme des relevés du jeu original :
+
+| | Ancien « relevé » | Fiche de référence |
+| --- | --- | --- |
+| Gris, Turquoise | 50 % | **70 %** |
+| Jaune, Violet | 150 % | **130 %** |
+| Noir | 200 % | **170 %** |
+| Noir — obus | 3 | **2** |
+| Jaune — mines | 0 | **4** |
+
+⚠ **Les deux ne peuvent pas être vraies.** Ni l'une ni l'autre n'est vérifiable
+ici : l'ancienne version annonçait des mesures sans les documenter, la fiche est
+une synthèse. La fiche l'emporte parce qu'elle est cohérente en interne et
+qu'elle décrit aussi les comportements, mais **ces vitesses ne sont plus à
+considérer comme mesurées** — c'est du réglage, au même titre que
+`CAMPAIGN_RULES`.
+
+Le classement, lui, est stable d'une source à l'autre, et c'est ce qui compte en
+jeu : deux tourelles fixes, deux lents, le joueur au milieu, deux rapides, le
+noir seul en tête. `tests/ai.test.ts` vérifie ce classement séparément des
+chiffres, pour qu'un futur réglage ne puisse pas le casser sans le voir.
+
+### Comportements ajoutés d'après la fiche
+
+Quatre comportements qu'elle décrit n'existaient pas dans le code :
+
+- **Le Noir anticipe.** Il vise là où la cible sera, pas où elle est. Les tanks
+  n'ayant pas de vecteur vitesse dans leur état, chaque tireur mémorise la
+  position de sa cible au calcul précédent et en déduit un déplacement par pas.
+  L'avance est abandonnée pour les tirs à ricochets, où le temps de vol calculé
+  à vol d'oiseau n'a plus de sens.
+- **Le Violet prend en tenaille.** Il approche en biais plutôt que de face, d'un
+  côté fixé par la parité de son identifiant : lâchés à plusieurs, ils
+  contournent par des bords opposés.
+- **Le Turquoise cherche sa ligne de tir.** Sans ricochet planifié, il n'a que
+  la ligne de vue : il se replace tant qu'aucun angle n'est ouvert, et tient sa
+  position dès qu'il en a un.
+- **Le Gris suit.** Il gardait ses distances, ce qui était l'inverse de ce que
+  la fiche décrit.
+
+### Le brun a retrouvé une portée de tir
+
+Supprimer la limite de portée sur le tir (voir plus bas) avait produit un excès
+inverse : le brun, décrit comme l'adversaire le plus faible du jeu, canardait
+d'un bord à l'autre de l'arène dès qu'une ligne se dégageait. Il est le seul à
+porter un `firingRangeTiles` fini ; pour toutes les autres couleurs, c'est
+l'existence d'un angle qui commande le tir, et rien d'autre.
+
+Létalité mesurée après réglage, contre un joueur immobile en arène ouverte —
+délai moyen avant la mort du joueur, sur 30 graines :
+
+| Brun | Gris | Jaune | Turquoise | Rose | Blanc | Violet | Vert | Noir |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| jamais | 9,6 s | 8,2 s | 7,5 s | 4,2 s | 3,9 s | 3,7 s | 2,5 s | 1,7 s |
+
 ### Deux corrections apportées après observation du vrai jeu
 
-**Le jaune n'a pas de canon.** Le relevé lui donnait un obus simultané ; dans le
-vrai jeu il ne tire jamais et ne pose que des mines, avec trois simultanées.
-`maxActiveShells` passe donc à 0 — ce qui suffit à interdire le tir, `fireShell`
-refusant dès que le quota est atteint — et `maxActiveMines` de 0 à 3. Sa
-tourelle continue de suivre le joueur : c'est sa seule façon de signaler qu'il
-vous a repéré.
+**Le jaune est un poseur de mines.** Le relevé lui en donnait zéro ; la fiche de
+référence lui en donne **quatre**, le quota le plus élevé du jeu, pour un seul
+obus. Sa force n'est pas son canon mais sa capacité à saturer une zone.
+
+Une consigne antérieure disait l'inverse — « le jaune ne tire pas, il n'envoie
+que des bombes ». Elle a été explicitement annulée : **la fiche est la seule
+référence**, et les consignes qui la précèdent ne valent plus. C'est aussi
+pourquoi `tests/ai.test.ts` la transcrit en une table unique plutôt qu'en
+assertions dispersées : une seule source, qui se relit comme le document.
 
 Conséquence : l'IA sait maintenant poser des mines, ce qu'elle ne faisait pas du
 tout (`mine: false` était écrit en dur). Un champ `mineIntervalSeconds` dit qui
-mine et à quelle fréquence, séparément du quota relevé — le violet, le blanc et
-le noir portent des mines d'après le relevé mais restent à 0, faute de savoir
-comment l'original les leur fait employer.
+mine et à quelle fréquence, séparément du quota. Les quatre couleurs qui en
+portent s'en servent désormais toutes ; le violet, le blanc et le noir ont
+longtemps gardé là une capacité morte, faute de savoir comment l'original la
+leur fait employer.
 
 Trois garde-fous ont été nécessaires, chacun découvert en voyant le jaune se
 suicider :

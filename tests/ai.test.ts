@@ -5,6 +5,7 @@ import { TileKind } from '../src/core/state.js';
 import type { Tank, TankColor, World } from '../src/core/state.js';
 import { TICK_RATE, tick } from '../src/core/tick.js';
 import { findFiringSolution, pathReaches, traceShellPath } from '../src/core/systems/ai/aiming.js';
+import { aimSpot } from '../src/core/systems/ai/brain.js';
 import { TANK_PROFILES, profileOf } from '../src/core/systems/ai/profiles.js';
 import { findEvasion } from '../src/core/systems/ai/threat.js';
 import { TUNING } from '../src/core/tuning.js';
@@ -57,43 +58,72 @@ describe('profils — conformité aux relevés', () => {
     }
   });
 
-  test('les multiplicateurs de vitesse correspondent aux valeurs relevées', () => {
-    // Relevés sur le jeu original — voir docs/provenance.md.
-    expect(profileOf('brown').speedMultiplier).toBe(0);
-    expect(profileOf('green').speedMultiplier).toBe(0);
-    expect(profileOf('ash').speedMultiplier).toBe(0.5);
-    expect(profileOf('teal').speedMultiplier).toBe(0.5);
-    expect(profileOf('pink').speedMultiplier).toBe(1);
-    expect(profileOf('white').speedMultiplier).toBe(1);
-    expect(profileOf('yellow').speedMultiplier).toBe(1.5);
-    expect(profileOf('purple').speedMultiplier).toBe(1.5);
-    expect(profileOf('black').speedMultiplier).toBe(2);
+  /* ── La fiche de référence, transcrite ────────────────────────────────────
+   *
+   * Une seule table, et c'est **elle** qui fait foi. Elle a remplacé les
+   * valeurs de l'ancienne version, qui se présentaient comme des relevés du jeu
+   * original sans qu'on puisse le vérifier — et qui la contredisaient sur six
+   * couleurs. Voir `docs/provenance.md`.
+   *
+   * Tout est ici plutôt qu'éparpillé en assertions séparées : la fiche est un
+   * document, elle se relit comme tel, et une valeur qui dérive doit sauter aux
+   * yeux dans le diff.
+   * ──────────────────────────────────────────────────────────────────────── */
+  interface Sheet {
+    vitesse: number;
+    obus: number;
+    rebonds: number;
+    roquette: boolean;
+    mines: number;
+  }
+
+  const FICHE: Record<string, Sheet> = {
+    //                vitesse  obus  rebonds  roquette  mines
+    player: { vitesse: 1.0, obus: 5, rebonds: 1, roquette: false, mines: 2 },
+    brown: { vitesse: 0.0, obus: 1, rebonds: 1, roquette: false, mines: 0 },
+    ash: { vitesse: 0.7, obus: 1, rebonds: 1, roquette: false, mines: 0 },
+    teal: { vitesse: 0.7, obus: 1, rebonds: 0, roquette: true, mines: 0 },
+    yellow: { vitesse: 1.3, obus: 1, rebonds: 1, roquette: false, mines: 4 },
+    pink: { vitesse: 1.0, obus: 3, rebonds: 1, roquette: false, mines: 0 },
+    green: { vitesse: 0.0, obus: 2, rebonds: 2, roquette: true, mines: 0 },
+    purple: { vitesse: 1.3, obus: 5, rebonds: 1, roquette: false, mines: 2 },
+    white: { vitesse: 1.0, obus: 5, rebonds: 1, roquette: false, mines: 2 },
+    black: { vitesse: 1.7, obus: 2, rebonds: 0, roquette: true, mines: 2 },
+  };
+
+  test.each(Object.entries(FICHE))('%s est conforme à la fiche', (color, fiche) => {
+    const profile = profileOf(color as TankColor);
+
+    expect(profile.speedMultiplier).toBe(fiche.vitesse);
+    expect(profile.maxActiveShells).toBe(fiche.obus);
+    expect(profile.shellBounces).toBe(fiche.rebonds);
+    expect(profile.shellKind).toBe(fiche.roquette ? 'fast' : 'normal');
+    expect(profile.maxActiveMines).toBe(fiche.mines);
   });
 
-  test('les armements correspondent aux valeurs relevées', () => {
-    // Relevés sur le jeu original : obus simultanés, ricochets, vitesse.
-    //
-    // Le jaune fait exception : le relevé lui donnait un obus, le vrai jeu ne
-    // lui en donne aucun — il ne tire jamais et ne sème que des mines. Voir
-    // le profil et `docs/provenance.md`.
-    const expected: Partial<Record<TankColor, [shells: number, bounces: number, fast: boolean]>> = {
-      brown: [1, 1, false],
-      ash: [1, 1, false],
-      teal: [1, 0, true],
-      yellow: [0, 1, false],
-      pink: [3, 1, false],
-      green: [2, 2, true],
-      purple: [5, 1, false],
-      white: [5, 1, false],
-      black: [3, 0, true],
-    };
-
-    for (const [color, [shells, bounces, fast]] of Object.entries(expected)) {
-      const profile = profileOf(color as TankColor);
-      expect(profile.maxActiveShells).toBe(shells);
-      expect(profile.shellBounces).toBe(bounces);
-      expect(profile.shellKind).toBe(fast ? 'fast' : 'normal');
+  test('les mines de la fiche sont réellement posées', () => {
+    // Le quota seul ne dit pas qui s'en sert : `mineIntervalSeconds` le dit.
+    // Porter des mines et ne jamais les poser serait une capacité morte — ça a
+    // été le cas du violet, du blanc et du noir jusqu'à cette passe.
+    for (const [color, fiche] of Object.entries(FICHE)) {
+      if (color === 'player') continue;
+      expect(profileOf(color as TankColor).mineIntervalSeconds > 0).toBe(fiche.mines > 0);
     }
+  });
+
+  test('l\'ordre de dangerosité des vitesses est respecté', () => {
+    // Ce qui compte pour le jeu n'est pas le chiffre exact mais le classement :
+    // deux tourelles fixes, deux lents, le joueur et le blanc à sa vitesse, les
+    // rapides au-dessus, et le noir seul en tête.
+    const speed = (color: TankColor) => profileOf(color).speedMultiplier;
+
+    expect(speed('brown')).toBe(speed('green'));
+    expect(speed('ash')).toBe(speed('teal'));
+    expect(speed('ash')).toBeLessThan(speed('player'));
+    expect(speed('white')).toBe(speed('player'));
+    expect(speed('yellow')).toBe(speed('purple'));
+    expect(speed('purple')).toBeGreaterThan(speed('pink'));
+    expect(speed('black')).toBeGreaterThan(speed('purple'));
   });
 
   test('la tourelle du joueur suit le pointeur sans inertie', () => {
@@ -385,50 +415,62 @@ describe('comportement en jeu', () => {
     expect(world.shells).toHaveLength(0);
   });
 
-  test('un ennemi tire de loin dès qu\'un angle s\'ouvre', () => {
-    // La portée de détection ne conditionne plus le tir, seulement le
-    // déplacement. Un brun immobile à l'autre bout d'un couloir dégagé doit
-    // ouvrir le feu : rester muet parce que la cible est « trop loin » se lit
-    // comme une panne, pas comme de la prudence.
-    const world = openWorld(30, 20);
-    const brown = addEnemy(world, 'brown', 26, 10);
-    // Vingt-trois tuiles : près de trois fois la portée de détection du profil,
-    // et plus que la diagonale d'une arène de campagne.
-    addPlayer(world, 3, 10);
-
-    // Compté au vol : le brun a la tourelle la plus lente du jeu (un demi-tour
-    // prend ~6,5 s), et une fois qu'il touche, il n'a plus de cible — regarder
-    // l'état final ne dirait rien de ce qu'il a fait.
+  /** Nombre d'obus tirés pendant `seconds`, comptés au vol. */
+  function countShots(world: World, seconds: number): number {
     let fired = 0;
-    let towardsPlayer = 0;
-
-    for (let i = 0; i < 25 * TICK_RATE; i++) {
+    for (let i = 0; i < seconds * TICK_RATE; i++) {
       const before = world.shells.length;
       tick(world, []);
-      if (world.shells.length > before) {
-        fired++;
-        if (world.shells[world.shells.length - 1]!.vx < 0) towardsPlayer++;
-      }
+      if (world.shells.length > before) fired++;
     }
+    return fired;
+  }
 
-    expect(fired).toBeGreaterThan(0);
-    // Et vers le joueur, pas au hasard : c'est bien un angle qui a été trouvé.
-    expect(towardsPlayer).toBe(fired);
-    expect(brown.turretAngle).toBeCloseTo(Math.PI, 1);
+  test('un ennemi tire de loin dès qu\'un angle s\'ouvre', () => {
+    // La portée de détection ne conditionne pas le tir, seulement le
+    // déplacement : un vert immobile à l'autre bout d'un couloir dégagé doit
+    // ouvrir le feu. Rester muet parce que la cible est « trop loin » se lit
+    // comme une panne, pas comme de la prudence.
+    const world = openWorld(30, 20);
+    // Vingt-trois tuiles, soit près du double de la portée de détection.
+    addEnemy(world, 'green', 26, 10);
+    addPlayer(world, 3, 10);
+
+    expect(countShots(world, 15)).toBeGreaterThan(0);
   });
 
-  test('le jaune ne tire jamais : il sème des mines', () => {
-    // Correction du relevé, d'après le vrai jeu : le jaune n'a pas de canon.
+  test('le brun, lui, ne tire pas au-delà de sa portée', () => {
+    // Seule exception, et volontaire : le brun est l'adversaire le plus faible
+    // du jeu. Le laisser canarder d'un bord à l'autre de l'arène dès qu'une
+    // ligne se dégage en faisait un tireur d'élite immobile.
+    const range = profileOf('brown').firingRangeTiles;
+    expect(range).toBeLessThan(Number.POSITIVE_INFINITY);
+
+    const loin = openWorld(40, 20);
+    addEnemy(loin, 'brown', 36, 10);
+    addPlayer(loin, 3, 10);
+    expect(countShots(loin, 20)).toBe(0);
+
+    // À portée, en revanche, il tire — la limite est une portée, pas un mutisme.
+    const pres = openWorld(40, 20);
+    addEnemy(pres, 'brown', 3 + Math.floor(range) - 1, 10);
+    addPlayer(pres, 3, 10);
+    expect(countShots(pres, 20)).toBeGreaterThan(0);
+  });
+
+  test('le jaune tire peu et mine beaucoup', () => {
+    // Sa force n'est pas son canon — un seul obus, comme le brun — mais sa
+    // capacité à saturer une zone : quatre mines, le quota le plus élevé.
     const world = openWorld(30, 20);
     addPlayer(world, 6, 10);
     const yellow = addEnemy(world, 'yellow', 20, 10);
     const quota = profileOf('yellow').maxActiveMines;
+    expect(quota).toBe(4);
 
     const laid = new Set<number>();
 
     for (let i = 0; i < 30 * TICK_RATE; i++) {
       tick(world, []);
-      expect(world.shells).toHaveLength(0);
       expect(yellow.activeMines).toBeLessThanOrEqual(quota);
       for (const mine of world.mines) laid.add(mine.id);
     }
@@ -436,17 +478,24 @@ describe('comportement en jeu', () => {
     expect(laid.size).toBeGreaterThan(0);
   });
 
-  test('un poseur de mines ne s\'assoit pas sur les siennes', () => {
-    // Une mine tue son poseur comme n'importe qui. Le jaune ne pose qu'en
-    // roulant, et sa vitesse (1,5×) lui laisse trois secondes pour s'écarter
-    // d'un souffle de deux tuiles — largement de quoi.
-    const world = openWorld(30, 20);
-    addPlayer(world, 6, 10);
-    const yellow = addEnemy(world, 'yellow', 20, 10);
+  test('un poseur de mines survit largement aux siennes', () => {
+    // Une mine tue son poseur comme n'importe qui, et le jaune pose au plus
+    // près en fonçant : il s'en fait sauter de temps en temps, comme dans le
+    // vrai jeu. Ce qu'on vérifie est que ça reste l'exception — un poseur qui
+    // se suicide systématiquement viderait la mission tout seul.
+    let survivors = 0;
+    const runs = 20;
 
-    advance(world, 60 * TICK_RATE);
+    for (let seed = 1; seed <= runs; seed++) {
+      const world = createWorld({ width: 18, height: 18, seed });
+      createTank(world, { color: 'player', playerId: 'p1', x: 3.5, y: 9.5 });
+      const yellow = createTank(world, { color: 'yellow', x: 14.5, y: 9.5 });
 
-    expect(yellow.alive).toBe(true);
+      for (let i = 0; i < 40 * TICK_RATE && yellow.alive; i++) tick(world, []);
+      if (yellow.alive) survivors++;
+    }
+
+    expect(survivors).toBeGreaterThanOrEqual(runs - 2);
   });
 
   test('respecte le quota d\'obus simultanés de son profil', () => {
@@ -458,6 +507,132 @@ describe('comportement en jeu', () => {
       tick(world, []);
       expect(purple.activeShells).toBeLessThanOrEqual(profileOf('purple').maxActiveShells);
     }
+  });
+});
+
+describe('comportements propres à chaque couleur', () => {
+  /** Fait avancer le monde en pilotant le joueur dans une direction fixe. */
+  function advanceWithPlayer(world: World, player: Tank, move: { x: number; y: number }, ticks: number): void {
+    for (let i = 0; i < ticks; i++) {
+      tick(world, [[player.id, { moveX: move.x, moveY: move.y, aim: 0, fire: false, mine: false }]]);
+    }
+  }
+
+  /** Monte un tireur, une cible, et la mémoire de position qui va avec. */
+  function spotFor(color: TankColor, moved: { x: number; y: number }) {
+    const world = openWorld(40, 40);
+    const shooter = addEnemy(world, color, 20, 30);
+    const target = addPlayer(world, 20, 10);
+
+    // La cible s'est déplacée de `moved` depuis le dernier calcul de visée.
+    shooter.ai!.targetLastX = target.x - moved.x;
+    shooter.ai!.targetLastY = target.y - moved.y;
+
+    return { spot: aimSpot(shooter, shooter.ai!, target, profileOf(color)), target };
+  }
+
+  test('le noir vise devant une cible qui se déplace', () => {
+    // Sa signature d'après la fiche : il anticipe. Une cible qui file vers la
+    // droite doit être visée à droite d'elle-même.
+    const { spot, target } = spotFor('black', { x: 2, y: 0 });
+
+    expect(spot.x).toBeGreaterThan(target.x);
+    expect(spot.y).toBeCloseTo(target.y, 6);
+  });
+
+  test('une cible immobile est visée là où elle est', () => {
+    // L'avance vaut zéro faute de déplacement : l'anticipation ne doit pas
+    // introduire d'écart quand il n'y a rien à anticiper.
+    const { spot, target } = spotFor('black', { x: 0, y: 0 });
+
+    expect(spot.x).toBeCloseTo(target.x, 6);
+    expect(spot.y).toBeCloseTo(target.y, 6);
+  });
+
+  test('les autres couleurs visent la position courante', () => {
+    // Contre-épreuve : dans la même géométrie, un profil sans `leadsTarget`
+    // rend exactement la position de la cible.
+    for (const color of ['green', 'purple', 'teal'] as const) {
+      const { spot, target } = spotFor(color, { x: 2, y: 0 });
+
+      expect(spot.x).toBeCloseTo(target.x, 6);
+      expect(spot.y).toBeCloseTo(target.y, 6);
+    }
+  });
+
+  test('le gris se rapproche au lieu de reculer', () => {
+    // La fiche le décrit comme suivant le joueur ; il gardait ses distances.
+    // Placé dans sa portée de détection, sans quoi il ne réagit pas du tout.
+    const world = openWorld(30, 20);
+    const player = addPlayer(world, 5, 10);
+    const ash = addEnemy(world, 'ash', 15, 10);
+    const start = Math.hypot(ash.x - player.x, ash.y - player.y);
+
+    advance(world, 2 * TICK_RATE);
+
+    expect(player.alive).toBe(true);
+    expect(Math.hypot(ash.x - player.x, ash.y - player.y)).toBeLessThan(start);
+  });
+
+  /**
+   * Distance de départ tenant dans la portée de détection du profil.
+   *
+   * Au-delà, le tank ne voit pas sa cible et patrouille au hasard — une
+   * première version de ces tests plaçait les violets à quatorze tuiles pour
+   * une portée de huit, et mesurait donc de l'errance en croyant lire une
+   * tenaille.
+   */
+  const purpleReach = Math.floor(profileOf('purple').detectionRangeTiles) - 2;
+
+  test('le violet contourne au lieu de charger', () => {
+    // « Prendre le joueur en tenaille » : son déplacement ne doit pas être
+    // colinéaire à la ligne qui le relie à sa cible.
+    const world = openWorld(40, 40);
+    addPlayer(world, 20, 20);
+    const purple = addEnemy(world, 'purple', 20 + purpleReach, 20);
+    const start = { x: purple.x, y: purple.y };
+
+    advance(world, 2 * TICK_RATE);
+
+    // Une charge frontale garderait y constant ; un contournement l'écarte.
+    expect(Math.abs(purple.y - start.y)).toBeGreaterThan(1);
+  });
+
+  test('deux violets contournent par des côtés opposés', () => {
+    // C'est ce qui fait la tenaille : partis de la même hauteur, ils prennent
+    // chacun un bord. Le côté se tire de la parité de l'identifiant, donc deux
+    // voisins divergent toujours.
+    const world = openWorld(40, 40);
+    addPlayer(world, 20, 20);
+    const first = addEnemy(world, 'purple', 20 + purpleReach, 20);
+    const second = addEnemy(world, 'purple', 19 + purpleReach, 20);
+    const startY = 20;
+
+    advance(world, 2 * TICK_RATE);
+
+    // Signes opposés depuis leur hauteur de départ : l'un monte, l'autre descend.
+    expect(Math.sign(first.y - startY) * Math.sign(second.y - startY)).toBe(-1);
+  });
+
+  test('le turquoise tient sa position dès qu\'il a un angle', () => {
+    // Il compte sur un tir direct, sans ricochet : sa ligne de vue vaut plus
+    // que sa distance. Une fois l'angle ouvert, il cesse de se replacer — mais
+    // seulement tant qu'il a une cible, une cible morte le renvoyant en
+    // patrouille.
+    const world = openWorld(30, 20);
+    const player = addPlayer(world, 6, 10);
+    const teal = addEnemy(world, 'teal', 20, 10);
+
+    // Laisse le temps au premier calcul de visée d'aboutir.
+    advance(world, TICK_RATE / 2);
+    expect(teal.ai!.solutionAngle).not.toBeNull();
+
+    const held = { x: teal.x, y: teal.y };
+    advance(world, TICK_RATE);
+
+    expect(player.alive).toBe(true);
+    // La distance de confort est de 6 tuiles : à 14, il ne recule pas non plus.
+    expect(Math.hypot(teal.x - held.x, teal.y - held.y)).toBeLessThan(0.5);
   });
 });
 

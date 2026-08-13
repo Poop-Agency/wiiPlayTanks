@@ -44,6 +44,18 @@ export type MovementStyle =
   | 'keepAway'
   /** Se rapproche jusqu'à portée utile. */
   | 'hunt'
+  /**
+   * Se replace tant qu'aucun angle de tir n'est ouvert, tient sa position dès
+   * qu'il en a un. Le tank qui compte sur un tir direct plutôt que sur le
+   * ricochet doit chercher la ligne, pas la distance.
+   */
+  | 'seekLine'
+  /**
+   * Se rapproche en biais plutôt que de face, et change de côté en chemin.
+   * Prendre l'adversaire en tenaille suppose de ne pas arriver là où il
+   * regarde.
+   */
+  | 'flank'
   /** Alterne sans logique apparente entre approche et déplacement erratique. */
   | 'erratic';
 
@@ -83,8 +95,28 @@ export interface TankProfile {
    */
   aimErrorRadians: number;
 
-  /** Portée de détection de la cible, en tuiles. */
+  /** Portée de détection de la cible, en tuiles. Gouverne le **déplacement**. */
   detectionRangeTiles: number;
+
+  /**
+   * Portée au-delà de laquelle le tank n'ouvre pas le feu, en tuiles.
+   *
+   * `Infinity` pour presque tous : ce qui commande le tir est l'existence d'un
+   * angle, pas la distance. Seul le brun est borné — c'est l'adversaire le plus
+   * faible du jeu, et le laisser canarder d'un bout à l'autre de l'arène dès
+   * qu'une ligne se dégage en faisait un tireur d'élite immobile, ce qu'il
+   * n'est pas censé être.
+   */
+  firingRangeTiles: number;
+
+  /**
+   * Le tank vise-t-il là où la cible **sera**, plutôt que là où elle est ?
+   *
+   * Réservé au noir, seul dont le relevé mentionne qu'il anticipe. Sur une
+   * cible immobile, ou pour un tir à ricochets, l'avance vaut zéro et le
+   * comportement est identique à celui des autres.
+   */
+  leadsTarget: boolean;
 
   /** Nombre de rebonds que l'IA envisage en cherchant un angle de tir. */
   plannedBounces: number;
@@ -127,6 +159,8 @@ const TANK_PROFILES_PLAYER: TankProfile = {
   mineIntervalSeconds: 0,
   aimErrorRadians: 0,
   detectionRangeTiles: Number.POSITIVE_INFINITY,
+  firingRangeTiles: Number.POSITIVE_INFINITY,
+  leadsTarget: false,
   plannedBounces: 0,
   movement: 'hold',
   preferredRangeTiles: 0,
@@ -149,6 +183,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     mineIntervalSeconds: 0,
     aimErrorRadians: 0.8,
     detectionRangeTiles: STANDARD_RANGE,
+    firingRangeTiles: STANDARD_RANGE,
+    leadsTarget: false,
     plannedBounces: 0,
     movement: 'hold',
     preferredRangeTiles: 0,
@@ -157,7 +193,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
 
   /** Cendre : patrouille lentement et garde ses distances. Repère de loin. */
   ash: {
-    speedMultiplier: 0.5,
+    speedMultiplier: 0.7,
     turretRateRadiansPerSecond: perFrameToPerSecond(0.025),
     maxActiveShells: 1,
     shellKind: 'normal',
@@ -168,15 +204,17 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     mineIntervalSeconds: 0,
     aimErrorRadians: 0.4,
     detectionRangeTiles: LONG_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: false,
     plannedBounces: 1,
-    movement: 'keepAway',
+    movement: 'hunt',
     preferredRangeTiles: 5,
     invisible: false,
   },
 
   /** Sarcelle : lent, mais son missile ne rebondit pas et arrive vite. */
   teal: {
-    speedMultiplier: 0.5,
+    speedMultiplier: 0.7,
     turretRateRadiansPerSecond: perFrameToPerSecond(0.025),
     maxActiveShells: 1,
     shellKind: 'fast',
@@ -187,37 +225,40 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     mineIntervalSeconds: 0,
     aimErrorRadians: 0.3,
     detectionRangeTiles: STANDARD_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: false,
     // Un missile ne rebondit pas : chercher un angle à rebonds n'aurait aucun sens.
     plannedBounces: 0,
-    movement: 'patrol',
+    movement: 'seekLine',
     preferredRangeTiles: 6,
     invisible: false,
   },
 
   /**
-   * Jaune : le poseur de mines. Rapide, imprévisible, et **sans canon**.
+   * Jaune : le poseur de mines. Très mobile, un seul obus, quatre mines.
    *
-   * Correction du relevé : l'ancienne version lui donnait un obus, ce que le
-   * vrai jeu ne fait pas — le jaune ne tire jamais, il sème des mines et
-   * compte sur le terrain. D'où `maxActiveShells: 0`, qui suffit à interdire
-   * le tir (`fireShell` refuse dès que le quota est atteint), et trois mines
-   * simultanées au lieu de zéro.
+   * Sa force n'est pas son canon mais sa capacité à saturer une zone : quatre
+   * mines simultanées, le quota le plus élevé du jeu, et la cadence de pose la
+   * plus rapide.
    *
-   * Sa tourelle continue de suivre le joueur : elle est sa seule façon de dire
-   * qu'il vous a repéré, et un jaune au canon figé paraîtrait en panne.
+   * ⚠ Le quota est un plafond, pas une garantie : `brain.ts` refuse de poser
+   * près d'une mine déjà en place, pour que le jaune ne s'enferme pas dans son
+   * propre champ. Quatre mines au sol en même temps demandent donc de la place.
    */
   yellow: {
-    speedMultiplier: 1.5,
+    speedMultiplier: 1.3,
     turretRateRadiansPerSecond: perFrameToPerSecond(0.02),
-    maxActiveShells: 0,
+    maxActiveShells: 1,
     shellKind: 'normal',
     shellBounces: 1,
-    maxActiveMines: 3,
+    maxActiveMines: 4,
     fireIntervalSeconds: 1.5,
     fireIntervalJitterSeconds: 2,
     mineIntervalSeconds: 2.5,
     aimErrorRadians: 0.6,
     detectionRangeTiles: STANDARD_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: false,
     plannedBounces: 1,
     movement: 'erratic',
     preferredRangeTiles: 4,
@@ -237,6 +278,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     mineIntervalSeconds: 0,
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: false,
     plannedBounces: 1,
     movement: 'hunt',
     preferredRangeTiles: 3,
@@ -259,6 +302,8 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     mineIntervalSeconds: 0,
     aimErrorRadians: 0.05,
     detectionRangeTiles: LONG_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: false,
     plannedBounces: 2,
     movement: 'hold',
     preferredRangeTiles: 0,
@@ -267,7 +312,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
 
   /** Violet : rapide, cinq obus en vol, traque sans relâche. */
   purple: {
-    speedMultiplier: 1.5,
+    speedMultiplier: 1.3,
     turretRateRadiansPerSecond: perFrameToPerSecond(0.045),
     maxActiveShells: 5,
     shellKind: 'normal',
@@ -275,11 +320,13 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 2,
     fireIntervalSeconds: 1,
     fireIntervalJitterSeconds: 0,
-    mineIntervalSeconds: 0,
+    mineIntervalSeconds: 4,
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: false,
     plannedBounces: 1,
-    movement: 'hunt',
+    movement: 'flank',
     preferredRangeTiles: 3,
     invisible: false,
   },
@@ -294,9 +341,11 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     maxActiveMines: 2,
     fireIntervalSeconds: 1,
     fireIntervalJitterSeconds: 0,
-    mineIntervalSeconds: 0,
+    mineIntervalSeconds: 4,
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: false,
     plannedBounces: 1,
     movement: 'hunt',
     preferredRangeTiles: 4,
@@ -305,17 +354,19 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
 
   /** Noir : le plus rapide, missiles sans rebond, cadence la plus élevée. */
   black: {
-    speedMultiplier: 2,
+    speedMultiplier: 1.7,
     turretRateRadiansPerSecond: perFrameToPerSecond(0.05),
-    maxActiveShells: 3,
+    maxActiveShells: 2,
     shellKind: 'fast',
     shellBounces: 0,
     maxActiveMines: 2,
     fireIntervalSeconds: 0.6,
     fireIntervalJitterSeconds: 0,
-    mineIntervalSeconds: 0,
+    mineIntervalSeconds: 4,
     aimErrorRadians: 0.25,
     detectionRangeTiles: LONG_RANGE,
+    firingRangeTiles: Number.POSITIVE_INFINITY,
+    leadsTarget: true,
     plannedBounces: 0,
     movement: 'hunt',
     preferredRangeTiles: 3,

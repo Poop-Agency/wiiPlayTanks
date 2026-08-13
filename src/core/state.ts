@@ -120,6 +120,17 @@ export interface TankAiState {
   fireCooldownTicks: number;
   /** Ticks avant la prochaine pose de mine autorisée. */
   mineCooldownTicks: number;
+  /**
+   * Position de la cible au calcul de visée précédent, ou `null` s'il n'y en a
+   * pas encore eu.
+   *
+   * C'est de quoi estimer sa vitesse, et donc viser en avance. Les tanks n'ont
+   * pas de vecteur vitesse dans leur état : le système de mouvement les
+   * déplace directement. Chaque tireur mémorise donc lui-même où il a vu sa
+   * cible la dernière fois.
+   */
+  targetLastX: number | null;
+  targetLastY: number | null;
   /** Direction suivie en patrouille, en radians. */
   roamAngle: number;
   /** Ticks avant de choisir une nouvelle direction de patrouille. */
