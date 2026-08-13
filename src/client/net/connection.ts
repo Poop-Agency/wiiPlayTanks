@@ -40,9 +40,30 @@ export function stablePlayerId(): string {
   const stored = sessionStorage.getItem(KEY);
   if (stored) return stored;
 
-  const created = crypto.randomUUID();
+  const created = randomId();
   sessionStorage.setItem(KEY, created);
   return created;
+}
+
+/**
+ * Identifiant aléatoire, y compris hors contexte sécurisé.
+ *
+ * `crypto.randomUUID` n'existe **que** dans un contexte sécurisé : HTTPS, ou
+ * `localhost`. Un serveur de jeu servi en clair sur une IP nue — le cas d'une
+ * VM sans nom de domaine — n'en est pas un, et l'appel y lève
+ * `TypeError: crypto.randomUUID is not a function`. Le co-op mourait donc au
+ * démarrage, avant même d'ouvrir sa socket, avec pour seul symptôme une page
+ * noire : le contraire d'un diagnostic.
+ *
+ * `crypto.getRandomValues`, lui, est disponible partout ; il ne reste qu'à
+ * formater. On ne vise pas la conformité RFC 4122 — cet identifiant ne sert
+ * qu'à distinguer deux onglets le temps d'une partie.
+ */
+function randomId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export class Connection implements Transport {
