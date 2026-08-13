@@ -20,7 +20,7 @@ import { TUNING } from '../../tuning.js';
 import { findFiringSolution, pathReaches, traceShellPath } from './aiming.js';
 import { breachGain, canReachSafety, hasClearPath, navigationHeading } from './navigation.js';
 import { profileOf } from './profiles.js';
-import { findEvasion } from './threat.js';
+import { findEvasion, findIncomingShell, interceptSpot } from './threat.js';
 import type { InputCommand, Mine, Tank, TankAiState, World } from '../../state.js';
 import type { TankProfile } from './profiles.js';
 
@@ -214,6 +214,42 @@ function worthBreaching(world: World, tank: Tank, target: Tank | null): boolean 
   }
 
   return false;
+}
+
+/**
+ * Angle vers lequel tirer pour abattre un obus entrant, ou `null`.
+ *
+ * Deux obus qui se rencontrent se détruisent : c'est une parade de l'original,
+ * et elle est la **seule** issue d'un tank acculé. Sans elle, un tank coincé
+ * contre une paroi encaissait sans rien tenter, ce qui se lit comme une panne.
+ *
+ * Réservé aux tanks qui ne peuvent pas s'écarter — soit parce qu'ils sont
+ * immobiles, soit parce que l'esquive n'a rien trouvé. Un tank qui a le choix
+ * s'écarte : c'est plus sûr, ça ne consomme pas son quota d'obus, et ça garde
+ * l'abattage pour ce qu'il est, un geste de dernier recours.
+ */
+function interceptionAngle(
+  world: World,
+  tank: Tank,
+  profile: TankProfile,
+  canEvade: boolean,
+): number | null {
+  if (canEvade) return null;
+  if (profile.maxActiveShells <= 0) return null;
+
+  const incoming = findIncomingShell(tank, world.shells, TUNING.ai.interceptHorizonSeconds);
+  if (!incoming) return null;
+
+  const spot = interceptSpot(tank, incoming, shellSpeed(profile));
+  if (!spot) return null;
+
+  // Le point de rencontre doit être atteignable en ligne droite : tirer dans le
+  // mur qui nous sépare de l'obus ne sauve personne.
+  const angle = Math.atan2(spot.y - tank.y, spot.x - tank.x);
+  const path = traceShellPath(world.grid, tank.x, tank.y, angle, 0);
+  if (pathReaches(path, spot.x, spot.y, TUNING.shell.radiusTiles * 2) === null) return null;
+
+  return angle;
 }
 
 /** Distance en dessous de laquelle deux tanks alliés se repoussent, en tuiles. */
@@ -717,9 +753,29 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
     ai.targetLastY = null;
   }
 
+  // ── Interception ──
+  // Décidée avant la visée normale : abattre l'obus qui arrive prime sur
+  // continuer à viser l'adversaire, puisqu'on ne survivra pas au second si on
+  // ignore le premier. La question « puis-je m'écarter ? » est tranchée plus
+  // bas mais nous est nécessaire ici ; on la pose donc en avance.
+  const mobile = profile.speedMultiplier > 0 && profile.movement !== 'hold';
+  const escape =
+    mobile
+      ? findEvasion(
+          tank,
+          world.shells,
+          TUNING.ai.evasionHorizonSeconds * profile.evasionSkill,
+          // Son propre ricochet se fuit toujours : pleine anticipation quelle
+          // que soit la couleur.
+          TUNING.ai.evasionHorizonSeconds,
+        )
+      : null;
+  const intercept = interceptionAngle(world, tank, profile, escape !== null);
+
   // Faute de solution, la tourelle reste pointée vers la cible : le joueur voit
   // ainsi qu'il est repéré, et le tank est prêt dès qu'un angle s'ouvre.
   const aim =
+    intercept ??
     ai.solutionAngle ??
     (target ? Math.atan2(target.y - tank.y, target.x - tank.x) : tank.turretAngle);
 
@@ -733,11 +789,12 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   // pour un tir qui n'a jamais lieu.
   const fire =
     profile.maxActiveShells > 0 &&
-    ai.solutionAngle !== null &&
-    target !== null &&
     aligned &&
     ai.fireCooldownTicks === 0 &&
-    shotIsSafe(world, tank, profile, target, aim);
+    (intercept !== null ||
+      (ai.solutionAngle !== null &&
+        target !== null &&
+        shotIsSafe(world, tank, profile, target, aim)));
 
   if (fire) {
     const jitter = profile.fireIntervalJitterSeconds * nextFloat(world.rng);
@@ -757,17 +814,8 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   // tous les mobiles quel que soit leur `evasionSkill` : c'est de la
   // conservation, pas du talent — sans elle le jaune se tue dans son propre
   // champ, ce qui ne ressemble à rien.
-  const mobile = profile.speedMultiplier > 0 && profile.movement !== 'hold';
   const flight = mobile ? findMineEscape(world, tank, profile) : null;
-  const evasion =
-    flight ??
-    (mobile
-      ? findEvasion(
-          tank,
-          world.shells,
-          TUNING.ai.evasionHorizonSeconds * profile.evasionSkill,
-        )
-      : null);
+  const evasion = flight ?? escape;
   const wanted = desiredHeading(world, tank, ai, profile, moveTarget);
   const heading = evasion ?? (mobile ? spreadOut(world, tank, wanted) : wanted);
 

@@ -9,6 +9,7 @@
  * le compactage a lieu en fin de pas.
  */
 
+import { DT } from '../tick.js';
 import { TUNING } from '../tuning.js';
 import type { EntityId, Shell, Tank, World } from '../state.js';
 
@@ -68,13 +69,16 @@ export function resolveShellTankHits(world: World, doomed: Set<EntityId>): void 
 /**
  * Obus contre obus : les deux explosent.
  *
+ * Règle de l'original, et elle change la façon de jouer : un tir qui arrive de
+ * face n'oblige pas à s'écarter, on peut l'**abattre**. C'est la seule parade
+ * d'un tank acculé, et c'est ce dont se sert `interceptionAngle` dans l'IA.
+ *
  * L'ancienne version tentait déjà ce comportement, mais collectait des indices
  * de tableau qu'elle invalidait ensuite en supprimant les éléments un à un.
  * On travaille ici sur des identifiants, qui restent valides quoi qu'il arrive.
  */
 export function resolveShellShellHits(world: World, doomed: Set<EntityId>): void {
-  const radius = TUNING.shell.radiusTiles;
-  const contactSquared = (radius * 2) * (radius * 2);
+  const contact = TUNING.shell.radiusTiles * 2;
 
   for (let i = 0; i < world.shells.length; i++) {
     const first = world.shells[i]!;
@@ -84,10 +88,19 @@ export function resolveShellShellHits(world: World, doomed: Set<EntityId>): void
       const second = world.shells[j]!;
       if (doomed.has(second.id)) continue;
 
-      const dx = first.x - second.x;
-      const dy = first.y - second.y;
+      // Deux obus d'un même tireur ne se gênent pas tant que l'un des deux est
+      // encore au canon : le rose en garde trois en vol, tirés à la file, et
+      // les faire se détruire à la sortie lui retirerait son arme.
+      if (first.ownerId === second.ownerId && !(first.armed && second.armed)) continue;
 
-      if (dx * dx + dy * dy < contactSquared) {
+      // Test **balayé**, et non ponctuel. Deux obus rapides qui se croisent de
+      // face se rapprochent de 0,3 tuile par pas pour un rayon cumulé de 0,19 :
+      // comparer les seules positions les laissait se traverser un pas sur deux,
+      // et l'interception ne marchait qu'une fois sur deux sans qu'on voie
+      // pourquoi.
+      const closing = Math.hypot(first.vx - second.vx, first.vy - second.vy) * DT;
+
+      if (Math.hypot(first.x - second.x, first.y - second.y) < contact + closing) {
         doomed.add(first.id);
         doomed.add(second.id);
         break;

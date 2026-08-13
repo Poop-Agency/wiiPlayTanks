@@ -24,8 +24,16 @@ export interface TraceSegment {
   y1: number;
 }
 
-/** Longueur maximale d'une trajectoire explorée, en tuiles. */
-const MAX_TRACE_DISTANCE = 40;
+/**
+ * Longueur maximale d'une trajectoire explorée, en tuiles.
+ *
+ * Le plafond valait 40, et il **mordait** : sur un plateau 18 × 18, un tir à
+ * deux bandes atteint couramment cette longueur, et la trajectoire était
+ * tronquée avant d'avoir pu revenir sur la cible. Le vert, seul à planifier
+ * deux rebonds, en était la première victime. Quatre-vingt-dix tuiles laissent
+ * la place à trois tronçons de diagonale complète.
+ */
+const MAX_TRACE_DISTANCE = 90;
 
 /**
  * Nombre de directions échantillonnées lors de la recherche d'un angle.
@@ -137,6 +145,33 @@ export function pathReaches(
   return null;
 }
 
+/**
+ * Distance minimale entre la trajectoire et un point, sans seuil.
+ *
+ * `pathReaches` répond « oui ou non, à telle distance parcourue » ; celle-ci
+ * répond « de combien on rate ». C'est ce qu'il faut pour **affiner** un angle :
+ * un tir validé peut passer à une demi-boîte du centre, et le cône d'erreur
+ * s'ajoute par-dessus. Le vert, dont toute la valeur tient dans la précision de
+ * ses ricochets, ratait pour cette seule raison.
+ */
+export function pathMissDistance(
+  segments: readonly TraceSegment[],
+  px: number,
+  py: number,
+  ignoreBefore = 0,
+): number {
+  let travelledBefore = 0;
+  let best = Number.POSITIVE_INFINITY;
+
+  for (const segment of segments) {
+    const { distance, travelled } = distanceToSegment(segment, px, py);
+    if (travelledBefore + travelled >= ignoreBefore) best = Math.min(best, distance);
+    travelledBefore += Math.hypot(segment.x1 - segment.x0, segment.y1 - segment.y0);
+  }
+
+  return best;
+}
+
 /** Un tank à éviter lors de la vérification de sécurité du tir. */
 export interface AimObstacle {
   x: number;
@@ -188,24 +223,128 @@ export function findFiringSolution(
 
   if (options.bounces <= 0) return null;
 
+  // Balayage grossier, noté à l'**écart** et non en tout ou rien.
+  //
+  // Ne retenir que les angles qui touchent déjà condamnait les tirs longs : à
+  // 2° d'écart entre deux échantillons, deux trajectoires voisines arrivent à
+  // une tuile l'une de l'autre au bout d'un trajet à deux bandes, et une cible
+  // de 0,78 tuile passe entre les deux. Les six verts de la mission 17 n'ont
+  // ainsi jamais tiré un seul obus — non par prudence, mais parce qu'aucun
+  // échantillon ne tombait dessus.
+  //
+  // On garde donc la **pente** : chaque minimum local d'écart est un angle
+  // prometteur, qu'on affine ensuite au dixième de degré.
+  const misses = new Float64Array(ANGLE_SAMPLES);
+  for (let sample = 0; sample < ANGLE_SAMPLES; sample++) {
+    const angle = (sample / ANGLE_SAMPLES) * TAU;
+    misses[sample] = pathMissDistance(
+      traceShellPath(grid, fromX, fromY, angle, options.bounces),
+      targetX,
+      targetY,
+      TUNING.tank.sizeTiles,
+    );
+  }
+
+  const candidates: number[] = [];
+  for (let sample = 0; sample < ANGLE_SAMPLES; sample++) {
+    const previous = misses[(sample - 1 + ANGLE_SAMPLES) % ANGLE_SAMPLES]!;
+    const next = misses[(sample + 1) % ANGLE_SAMPLES]!;
+    if (misses[sample]! <= previous && misses[sample]! <= next) candidates.push(sample);
+  }
+
+  candidates.sort((a, b) => misses[a]! - misses[b]!);
+
   let bestAngle: number | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
-  for (let sample = 0; sample < ANGLE_SAMPLES; sample++) {
-    const angle = (sample / ANGLE_SAMPLES) * TAU;
+  for (const sample of candidates.slice(0, MAX_REFINED_CANDIDATES)) {
+    const refined = refineAngle(
+      grid,
+      fromX,
+      fromY,
+      targetX,
+      targetY,
+      (sample / ANGLE_SAMPLES) * TAU,
+      options,
+    );
+    if (refined === null) continue;
+
+    // Entre deux solutions valides, la plus courte : c'est celle qui laisse le
+    // moins de temps à la cible pour s'écarter.
     const reach = solutionDistance(
       grid,
       fromX,
       fromY,
       targetX,
       targetY,
-      angle,
+      refined,
       options.bounces,
       options,
     );
-
     if (reach !== null && reach < bestDistance) {
       bestDistance = reach;
+      bestAngle = refined;
+    }
+  }
+
+  return bestAngle;
+}
+
+/**
+ * Nombre de minima locaux affinés avant d'abandonner.
+ *
+ * Les candidats sont triés par écart croissant : les premiers sont de loin les
+ * plus prometteurs. Quatre suffisent, et bornent le coût du raffinement à une
+ * fraction du balayage lui-même.
+ */
+const MAX_REFINED_CANDIDATES = 4;
+
+/**
+ * Nombre de sous-angles essayés de part et d'autre d'un angle grossier.
+ *
+ * Le balayage principal échantillonne tous les 2°. Vingt et un sous-angles
+ * ramènent le pas à un dixième de degré, ce qui recentre le tir sur le milieu
+ * de la cible au lieu de le laisser frôler son bord.
+ */
+const REFINE_STEPS = 21;
+
+/**
+ * Cherche, autour d'un angle grossier, celui qui passe le plus près du centre.
+ *
+ * Rend `null` si aucun sous-angle ne donne de trajectoire à la fois touchante et
+ * sûre — le minimum local n'était alors qu'un passage à côté.
+ */
+function refineAngle(
+  grid: Grid,
+  fromX: number,
+  fromY: number,
+  targetX: number,
+  targetY: number,
+  coarse: number,
+  options: FiringSolutionOptions,
+): number | null {
+  const span = TAU / ANGLE_SAMPLES;
+  let bestAngle: number | null = null;
+  let bestMiss = Number.POSITIVE_INFINITY;
+
+  for (let step = 0; step < REFINE_STEPS; step++) {
+    const angle = coarse - span + (step / (REFINE_STEPS - 1)) * span * 2;
+    if (
+      solutionDistance(grid, fromX, fromY, targetX, targetY, angle, options.bounces, options) ===
+      null
+    ) {
+      continue;
+    }
+
+    const miss = pathMissDistance(
+      traceShellPath(grid, fromX, fromY, angle, options.bounces),
+      targetX,
+      targetY,
+      TUNING.tank.sizeTiles,
+    );
+
+    if (miss < bestMiss) {
+      bestMiss = miss;
       bestAngle = angle;
     }
   }

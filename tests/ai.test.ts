@@ -934,6 +934,109 @@ describe('navigation', () => {
   });
 });
 
+describe('interception d\'obus', () => {
+  /** Envoie un obus droit sur un tank, depuis `distance` tuiles à sa gauche. */
+  function tirSur(world: World, cible: Tank, distance: number): void {
+    world.shells.push({
+      id: allocateEntityId(world),
+      ownerId: -1,
+      kind: 'normal',
+      x: cible.x - distance,
+      y: cible.y,
+      vx: TUNING.shell.normalSpeedTilesPerSecond,
+      vy: 0,
+      bouncesLeft: 1,
+      armed: true,
+    });
+  }
+
+  test('deux obus qui se rencontrent se détruisent', () => {
+    // Règle de l'original, et elle manquait entièrement : un tir qui arrive de
+    // face n'oblige pas à s'écarter, on peut l'abattre.
+    const world = openWorld();
+    const speed = TUNING.shell.normalSpeedTilesPerSecond;
+
+    for (const [x, vx] of [[10, speed], [14, -speed]] as const) {
+      world.shells.push({
+        id: allocateEntityId(world),
+        ownerId: -1,
+        kind: 'normal',
+        x,
+        y: 10,
+        vx,
+        vy: 0,
+        bouncesLeft: 1,
+        armed: true,
+      });
+    }
+
+    advance(world, TICK_RATE);
+    expect(world.shells).toHaveLength(0);
+  });
+
+  test('deux obus du même tireur ne se gênent pas à la sortie du canon', () => {
+    // Le rose en garde trois en vol : tirés à la file, ils se chevauchent au
+    // canon. Les faire se détruire là lui retirerait son arme. La règle ne
+    // s'applique donc entre obus d'un même tireur qu'une fois les deux armés.
+    //
+    // Le tireur doit exister : `updateArming` arme immédiatement tout obus
+    // orphelin, ce qui rendrait le montage inopérant.
+    const world = openWorld();
+    const pink = addEnemy(world, 'pink', 10, 10);
+    const speed = TUNING.shell.normalSpeedTilesPerSecond;
+
+    for (let i = 0; i < 2; i++) {
+      world.shells.push({
+        id: allocateEntityId(world),
+        ownerId: pink.id,
+        kind: 'normal',
+        x: 10.1,
+        y: 10,
+        vx: speed,
+        vy: 0,
+        bouncesLeft: 1,
+        armed: false,
+      });
+    }
+
+    advance(world, 1);
+    expect(world.shells).toHaveLength(2);
+    expect(pink.alive).toBe(true);
+  });
+
+  test('un tank qui ne peut pas s\'écarter abat l\'obus qui arrive', () => {
+    // Un vert est immobile : l'esquive lui est structurellement interdite. Sans
+    // interception il encaissait sans rien tenter, ce qui se lit comme une
+    // panne alors que l'original lui laisse cette parade.
+    let survit = 0;
+
+    for (let seed = 1; seed <= 20; seed++) {
+      const world = createWorld({ width: 30, height: 20, seed });
+      const green = addEnemy(world, 'green', 20, 10);
+      addPlayer(world, 3, 10);
+      tirSur(world, green, 8);
+
+      for (let i = 0; i < 3 * TICK_RATE && green.alive; i++) tick(world, []);
+      if (green.alive) survit++;
+    }
+
+    expect(survit).toBe(20);
+  });
+
+  test('le brun est trop lent de tourelle pour se sauver ainsi', () => {
+    // La parade n'est pas gratuite : il faut amener le canon sur l'obus. Le
+    // brun met 3,3 s pour un quart de tour — l'adversaire le plus faible du jeu
+    // le reste.
+    const world = openWorld();
+    const brown = addEnemy(world, 'brown', 20, 10);
+    addPlayer(world, 3, 10);
+    tirSur(world, brown, 8);
+
+    for (let i = 0; i < 3 * TICK_RATE && brown.alive; i++) tick(world, []);
+    expect(brown.alive).toBe(false);
+  });
+});
+
 describe('déterminisme de l\'IA', () => {
   test('une bataille rejouée depuis la même graine est identique', () => {
     // L'IA tire au sort ses directions de patrouille et son cône d'erreur.

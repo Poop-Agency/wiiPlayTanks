@@ -158,6 +158,15 @@ export interface Tuning {
      * trop tôt donnerait des tanks qui fuient des projectiles encore lointains.
      */
     evasionHorizonSeconds: number;
+    /**
+     * Horizon d'anticipation pour **abattre** un obus entrant, en secondes.
+     *
+     * Plus large que celui de l'esquive : viser demande de tourner la tourelle,
+     * puis à l'obus intercepteur de parcourir la distance qui le sépare du
+     * point de rencontre. Réagir aussi tard que pour un pas de côté ne laisserait
+     * jamais le temps de tirer.
+     */
+    interceptHorizonSeconds: number;
   };
 }
 
@@ -216,5 +225,6 @@ export const TUNING: Tuning = {
     roamMinSeconds: 0.5,
     roamMaxSeconds: 2,
     evasionHorizonSeconds: 1,
+    interceptHorizonSeconds: 2,
   },
 };

@@ -336,7 +336,12 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     fireIntervalSeconds: 1.8,
     fireIntervalJitterSeconds: 0,
     mineIntervalSeconds: 0,
-    aimErrorRadians: 0.05,
+    // **Zéro**, et c'est délibéré : le vert est immobile, il n'a qu'un canon, et
+    // toute sa valeur tient dans le fait que son ricochet arrive exactement où
+    // il l'a calculé. Un cône, même minuscule, se paie au bout d'une trentaine
+    // de tuiles de trajet à deux bandes et lui fait manquer un tank entier — ce
+    // qui ne lui laisse plus aucune force.
+    aimErrorRadians: 0,
     detectionRangeTiles: LONG_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
       leadsTarget: false,

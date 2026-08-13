@@ -476,6 +476,82 @@ obus manqué peut revenir de bande. À ±8,6° il devenait presque aussi fiable 
 le Vert dès qu'il tenait son angle, ce que ni la fiche ni son rôle dans la
 campagne ne justifient. Réglage, non relevé.
 
+### Le vert ne trouvait pas ses ricochets
+
+Signalé en jeu : « les verts ratent trop souvent, alors que leur seule force est
+de toujours tirer parfaitement ». La mesure a corrigé le diagnostic — contre une
+cible immobile **comme mobile**, en arène ouverte comme derrière un mur, le vert
+touchait déjà 30 fois sur 30. Il ne ratait pas : par endroits, **il ne tirait
+pas du tout**. Six verts en mission 17 n'envoyaient pas un obus en quarante
+secondes.
+
+Deux défauts distincts dans la recherche d'angle, et un troisième qui n'en est
+pas un :
+
+- **Le balayage était en tout ou rien.** 180 échantillons, soit 2° d'écart : au
+  bout d'un trajet à deux bandes, deux angles voisins arrivent à une tuile l'un
+  de l'autre, et une cible de 0,78 tuile passe **entre les deux**. La recherche
+  note maintenant l'**écart** de chaque angle et affine chaque minimum local au
+  dixième de degré. Elle trouve donc des solutions là où elle n'en voyait
+  aucune, et elle centre le tir sur le milieu de la cible au lieu de le laisser
+  frôler son bord.
+- **Le plafond de trajectoire mordait.** `MAX_TRACE_DISTANCE` valait 40 tuiles,
+  or un tir à deux bandes sur un plateau 18 × 18 atteint couramment cette
+  longueur : la trajectoire était tronquée avant d'avoir pu revenir sur la
+  cible. Porté à 90.
+- **La mission 17, elle, n'a pas de solution du tout.** Son tracé est un
+  empilement de barres horizontales ; depuis la position des verts, l'écart
+  minimal au joueur est de 4,2 tuiles sur 3600 angles essayés, tous rebonds
+  confondus. C'est un problème de **tracé**, pas d'IA — et la mission 17 fait
+  partie des grilles écrites pour cette refonte, en attente de capture.
+
+Le cône du vert passe par ailleurs à **zéro**. Sa valeur tient entièrement dans
+le fait que son ricochet arrive là où il l'a calculé ; un cône, même minuscule,
+se paie au bout d'une trentaine de tuiles de trajet.
+
+### L'interception : abattre l'obus quand on ne peut pas l'esquiver
+
+Signalé en jeu : un tank acculé encaisse sans rien tenter, alors qu'il pourrait
+tirer sur l'obus qui arrive.
+
+⚠ **La collision obus contre obus existait déjà**, dans `systems/damage.ts` —
+c'est l'IA qui ne s'en servait pas. Deux corrections tout de même sur la
+mécanique elle-même :
+
+- **Test balayé.** Deux obus rapides qui se croisent de face se rapprochent de
+  0,3 tuile par pas pour un rayon cumulé de 0,19 : comparer les seules positions
+  les laissait se traverser un pas sur deux.
+- **Exemption au canon.** Deux obus d'un même tireur ne se détruisent plus tant
+  que l'un des deux n'est pas armé — le rose en garde trois en vol, tirés à la
+  file.
+
+Côté IA, `interceptionAngle` résout l'instant de rencontre par une équation du
+second degré, et n'intervient **que si l'esquive n'a rien donné** : un tank qui
+peut s'écarter s'écarte, ce qui est plus sûr et ne consomme pas son quota
+d'obus. Survie à un obus tiré à bout portant sur un tank qui ne peut pas bouger,
+20 graines :
+
+| | Brun | Vert | Turquoise | Rose |
+| --- | --- | --- | --- | --- |
+| **obus à 8 tuiles** | 0/20 | 20/20 | 16/20 | 20/20 |
+| **obus à 4 tuiles** | 0/20 | 0/20 | 16/20 | 18/20 |
+
+La parade n'est pas gratuite : il faut amener le canon sur l'obus. Le brun, à
+3,3 s le quart de tour, n'y arrive jamais — l'adversaire le plus faible du jeu
+le reste. Le vert y arrive à huit tuiles, plus à quatre.
+
+### Le rose fonçait dans son propre ricochet
+
+Deux horizons d'esquive au lieu d'un. Esquiver l'obus d'un **adversaire** reste
+un talent réservé au cendre et au noir ; ne pas foncer dans son **propre**
+ricochet n'en est pas un, c'est de la conservation élémentaire, du même ordre que
+fuir sa propre mine. Le second horizon est donc ouvert à tous les mobiles.
+
+Sans cette distinction, le rose — qui n'esquive rien, garde trois obus en vol et
+charge à trois tuiles — repartait droit dans l'obus qu'il venait de renvoyer
+contre le mur d'en face. Ses suicides tombent à zéro sur toutes les missions
+mesurées.
+
 ### Les tanks contournent les murs, et les poseurs les percent
 
 Défaut le plus visible signalé en jeu : un ennemi qui « traque » poussait en
