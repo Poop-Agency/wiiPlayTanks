@@ -436,12 +436,155 @@ Turquoise — même vitesse que le Gris, aucune esquive, 35 %. Le Gris est régl
 au-delà de 0,3 il passe à 95 %, ce qui n'est plus « parfois ».
 
 ⚠ **Le Violet et le Blanc sont déduits, pas relevés.** La fiche ne leur prête
-aucune esquive ; elle leur prête une « IA avancée ». On leur laisse une
-anticipation partielle (0,6), en retrait du Noir à qui l'esquive active est
-explicitement réservée. C'est le seul choix de cette passe qui ne vienne pas
-de la fiche.
+aucune esquive ; elle leur prête une « IA avancée ». C'est le seul choix de
+cette passe qui ne vienne pas de la fiche.
+
+Leurs deux valeurs ont été réglées à la mesure après un audit externe qui
+soupçonnait, à juste titre, que les chiffres au-dessus de 0,35 n'avaient aucun
+effet. Protocole : joueur immobile qui tire en continu, adversaire à 11 tuiles,
+80 graines, nombre de parties où le joueur parvient à le tuer.
+
+| `evasionSkill` | 0,20 | 0,25 | 0,30 | 0,35 | 0,45 | 0,60 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Violet** | 22/80 | 21/80 | 21/80 | 23/80 | 22/80 | 21/80 |
+| **Blanc** | 33/80 | 31/80 | 19/80 | 17/80 | 15/80 | 14/80 |
+| **Noir** | **80/80** | 0/80 | 0/80 | 0/80 | 0/80 | 3/80 |
+
+Trois enseignements, et ils vont à l'encontre de l'intuition :
+
+- **Le Violet est plat dès 0,20.** À 130 % de vitesse, un préavis minime lui
+  suffit pour dégager le couloir. Il est donc ramené à **0,25**, le même cran
+  que le Cendre : sa supériorité vient de son châssis, pas de sa vigilance.
+  Écrire 0,6 revenait à noter un chiffre sans effet.
+- **Le Blanc, lui, continue de progresser** jusqu'à 0,6 — il est à 100 % de
+  vitesse et lui faut plus de préavis pour la même distance latérale. Il **garde
+  0,6** ; l'aligner sur le Violet le rendrait deux fois plus facile à tuer, à
+  armement identique.
+- **Le Noir a une falaise entre 0,20 et 0,25**, et rien au-delà. Il garde
+  néanmoins **1**, qui veut dire « pleine vigilance » relativement au réglage
+  global : calibrer sur 0,25 casserait le jour où
+  `TUNING.ai.evasionHorizonSeconds` change.
+
+⚠ **`evasionSkill` n'est donc pas un classement de dangerosité.** C'est un temps
+de réaction, et deux tanks au même cran peuvent être très inégaux à l'écran.
+`tests/ai.test.ts` verrouille ce piège explicitement.
+
+### Le cône du Turquoise élargi à ±11°
+
+Sa roquette ne rebondit pas : une balle perdue l'est définitivement, là où un
+obus manqué peut revenir de bande. À ±8,6° il devenait presque aussi fiable que
+le Vert dès qu'il tenait son angle, ce que ni la fiche ni son rôle dans la
+campagne ne justifient. Réglage, non relevé.
+
+### Les tanks contournent les murs, et les poseurs les percent
+
+Défaut le plus visible signalé en jeu : un ennemi qui « traque » poussait en
+**ligne droite** vers sa cible. Devant un mur, le système de mouvement le faisait
+glisser le long de la paroi et il restait collé derrière, à pousser dans le vide.
+Le joueur se mettait à couvert et l'attaque s'arrêtait net.
+
+`systems/ai/navigation.ts` ajoute un **champ de distance** — propagation en
+largeur depuis la case de la cible, sur les cases franchissables — que chaque
+tank descend en pente. Trois précautions :
+
+- **La ligne droite reste prioritaire** quand la vue est dégagée, ce qui est le
+  cas la plupart du temps en terrain ouvert. Le contournement n'intervient que
+  lorsqu'il y a réellement quelque chose à éviter, et le mouvement garde sa
+  fluidité d'avant.
+- **Les mines vivantes sont des obstacles** dans la propagation. Un poseur ne
+  traverse plus le souffle de sa propre mine pour rejoindre le joueur.
+- **Sans chemin du tout**, le tank reprend sa patrouille. Pousser dans un
+  obstacle se lit comme une panne.
+
+Les mines détruisent le terrain cassable, et l'IA l'ignorait : elle contournait
+sagement une cloison de liège qu'elle pouvait ouvrir. `breachGain` chiffre le
+raccourci qu'ouvrirait chaque bloc à portée de souffle ; au-delà de trois cases
+gagnées, le poseur mine le mur au lieu d'en faire le tour. C'est ce qui permet de
+prendre en tenaille un joueur retranché — et sur un tracé comme la mission 9,
+dont une colonne de liège coupe l'arène dans toute sa hauteur, c'est la
+différence entre attaquer et défiler.
+
+Coût mesuré : **moins de 0,6 % du budget d'une image à 60 Hz**, missions les plus
+chargées comprises. Rien n'est mis en cache, délibérément — un cache demanderait
+d'être invalidé par la grille, par les mines et par la position de la cible, et
+une invalidation ratée se paierait en divergence réseau, bien plus cher que le
+calcul lui-même.
+
+### L'IA se tuait toute seule : quatre causes, mesurées puis corrigées
+
+Signalé en jeu comme un comportement « auto-destructeur énorme » du violet et du
+blanc. Un audit a attribué chaque mort d'IA à sa cause, joueur totalement passif,
+12 graines, 60 s par mission.
+
+| | Mission 15 | Mission 16 | Mission 19 | Mission 20 | Mission 100 |
+| --- | --- | --- | --- | --- | --- |
+| **Avant** | 1 | 0 | 14 | 7 | 1 |
+| **Après** | 0 | 3 | 0 | 4 | 0 |
+
+Quatre défauts distincts, tous confirmés par la mesure avant d'être touchés :
+
+1. **Le cône d'erreur n'était pas pris en compte.** `findFiringSolution` écarte
+   les angles traversant un allié, mais seulement l'angle **nominal** ; l'écart
+   de visée est tiré *au tir*, après validation. `shotIsSafe` refait la
+   vérification à l'instant du tir et sur tout le cône. Le tank ne corrige pas
+   son angle, il **s'abstient**.
+2. **Les alliés bougent.** Un couloir libre au moment du tir ne l'est plus une
+   fraction de seconde plus tard. La boîte d'un allié est désormais élargie de
+   ce qu'il peut parcourir pendant le vol de l'obus. **C'est de loin le
+   correctif le plus efficace des quatre** : à lui seul il fait passer la
+   mission 19 de 14 morts à 1.
+3. **Une mine se pose en reculant, pas en chargeant.** Un traqueur qui minait en
+   approche restait dans le souffle par construction : il continuait d'avancer
+   vers l'adversaire, donc de tourner autour du point qu'il venait de miner.
+   Poser exige maintenant de s'éloigner de la cible — sauf pour percer un mur,
+   où le bloc visé est forcément devant.
+4. **On ignorait son propre ricochet.** La règle du jeu veut qu'on puisse se
+   tuer avec, et l'IA l'excluait de son esquive. Un obus **armé** compte
+   désormais pour son propre tireur.
+
+⚠ **Deux fausses pistes, à ne pas refaire.** Traiter les mines comme des murs
+dans le tirage de patrouille a *empiré* les choses : la direction se retirait à
+chaque pas et le tank piétinait sur place. Et le rayon de fuite calculé sur la
+mèche restante oubliait la demi-boîte du châssis, si bien que la fuite se
+relâchait une fraction de tuile trop tôt et que le tank revenait mourir dessus.
+
+### Les alliés ne s'agglutinent plus
+
+Tous les tanks d'une mission poursuivent la même cible par le même chemin :
+sans rien pour les séparer ils s'empilent, arrivent en colonne, se masquent la
+ligne de tir et se tirent dessus. Le turquoise en donnait le cas le plus visible,
+puisqu'il se fige dès qu'il tient un angle et que le suivant venait se coller à
+lui.
+
+Une répulsion de proximité, minoritaire face à la consigne d'origine — le but est
+d'arriver **en éventail**, pas de renoncer à approcher. Paires de tanks à moins
+de 2,5 tuiles, 12 graines, 45 s :
+
+| | Mission 7 | Mission 8 | Mission 19 |
+| --- | --- | --- | --- |
+| **Sans répulsion** | 2,0 % | 9,8 % | 5,3 % |
+| **Avec** | 0,0 % | 5,4 % | 2,8 % |
 
 ### Le brun a retrouvé une portée de tir
+
+⚠ **Une alternative a été essayée puis rejetée** : donner au brun une tourelle
+qui balaie en continu (`turretMode: 'sweep'`) au lieu de suivre le joueur, ce
+qui aurait permis de supprimer ce plafond de portée. Le soupçon était fondé — le
+brun utilise aujourd'hui *exactement* le même algorithme de visée que le noir,
+seulement bridé, ce qui est un tank intelligent rendu mauvais artificiellement
+plutôt qu'un tank réellement rudimentaire. Mais le résultat en jeu n'a pas
+convaincu l'auteur du projet, et le code a été retiré plutôt que gardé en
+sommeil.
+
+Deux constats mesurés à l'occasion, à ne pas réinventer :
+
+- L'argument selon lequel un canon balayant tomberait plus rarement sur une
+  cible lointaine (elle occupe moins d'angle : 11° à 4 tuiles, 3,7° à 12) est
+  **faux**. Le pas de rotation par tick vaut 0,5°, bien plus fin que la cible la
+  plus lointaine : la tourelle ne saute jamais par-dessus.
+- Ce qui retient réellement le brun à distance est `maxActiveShells: 1` combiné
+  au temps de vol — à trente tuiles un obus met sept secondes, pendant lesquelles
+  il ne peut pas retirer. Ce mécanisme existe indépendamment du mode de tourelle.
 
 Supprimer la limite de portée sur le tir (voir plus bas) avait produit un excès
 inverse : le brun, décrit comme l'adversaire le plus faible du jeu, canardait

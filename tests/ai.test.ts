@@ -94,7 +94,7 @@ describe('profils — conformité aux relevés', () => {
     yellow: { vitesse: 1.3, obus: 1, rebonds: 1, roquette: false, mines: 4, esquive: 0 },
     pink: { vitesse: 1.0, obus: 3, rebonds: 1, roquette: false, mines: 0, esquive: 0 },
     green: { vitesse: 0.0, obus: 2, rebonds: 2, roquette: true, mines: 0, esquive: 0 },
-    purple: { vitesse: 1.3, obus: 5, rebonds: 1, roquette: false, mines: 2, esquive: 0.6 }, // ⚠
+    purple: { vitesse: 1.3, obus: 5, rebonds: 1, roquette: false, mines: 2, esquive: 0.25 }, // ⚠
     white: { vitesse: 1.0, obus: 5, rebonds: 1, roquette: false, mines: 2, esquive: 0.6 }, // ⚠
     black: { vitesse: 1.7, obus: 2, rebonds: 0, roquette: true, mines: 2, esquive: 1 },
   };
@@ -127,7 +127,21 @@ describe('profils — conformité aux relevés', () => {
 
     expect(better).toEqual([]);
     expect(profileOf('ash').evasionSkill).toBeGreaterThan(0);
-    expect(profileOf('ash').evasionSkill).toBeLessThan(profileOf('purple').evasionSkill);
+  });
+
+  test('le préavis d\'esquive n\'est pas un classement de dangerosité', () => {
+    // Piège à relecture : `evasionSkill` est un **temps de réaction**, pas un
+    // talent. Le violet est au même cran que le cendre alors qu'il est bien
+    // plus dur à toucher — parce qu'il va deux fois plus vite et dégage le
+    // couloir avec le même préavis. Le blanc est plus haut qu'eux deux parce
+    // qu'il est plus lent que le violet, à armement identique.
+    //
+    // Mesuré, pas supposé : au-delà de 0,2 la courbe du violet est plate,
+    // celle du blanc descend encore jusqu'à 0,6. Aligner les deux serait une
+    // fausse symétrie.
+    expect(profileOf('purple').evasionSkill).toBe(profileOf('ash').evasionSkill);
+    expect(profileOf('white').evasionSkill).toBeGreaterThan(profileOf('purple').evasionSkill);
+    expect(profileOf('white').speedMultiplier).toBeLessThan(profileOf('purple').speedMultiplier);
   });
 
   test('les mines de la fiche sont réellement posées', () => {
@@ -806,23 +820,117 @@ describe('esquive', () => {
     expect(survivalRate('ash')).toBeLessThan(1);
   });
 
-  test('un tank n\'esquive pas son propre obus', () => {
+  test('un tank esquive son propre obus, mais seulement une fois armé', () => {
+    // La règle du jeu veut qu'on puisse se tuer avec son propre ricochet.
+    // L'IA l'ignorait, et l'audit des morts a montré des traqueurs qui tiraient
+    // vers un mur proche puis fonçaient dans l'obus revenu de bande.
+    //
+    // Avant armement, en revanche, l'obus chevauche encore le canon : il ne peut
+    // pas tuer son tireur, et fuir sa propre bouche de tir n'aurait aucun sens.
     const world = openWorld();
     const tank = addPlayer(world, 20, 10);
 
-    world.shells.push({
+    const shell = {
       id: allocateEntityId(world),
       ownerId: tank.id,
-      kind: 'normal',
+      kind: 'normal' as const,
       x: 15,
       y: 10,
       vx: 5,
       vy: 0,
       bouncesLeft: 1,
-      armed: true,
-    });
+      armed: false,
+    };
+    world.shells.push(shell);
 
     expect(findEvasion(tank, world.shells, FULL_HORIZON)).toBeNull();
+
+    shell.armed = true;
+    expect(findEvasion(tank, world.shells, FULL_HORIZON)).not.toBeNull();
+  });
+});
+
+describe('navigation', () => {
+  /** Mur plein percé d'une seule ouverture en bas. */
+  function wallWithGap(world: World, x: number, gapFromY: number, kind = TileKind.Indestructible): void {
+    for (let y = 0; y < world.grid.height; y++) {
+      if (y >= gapFromY) continue;
+      setTile(world.grid, x, y, kind);
+    }
+  }
+
+  test('un traqueur contourne le mur au lieu de pousser dedans', () => {
+    // Le défaut le plus visible de l'IA : elle poussait en ligne droite vers la
+    // cible. Devant un mur, le système de mouvement la faisait glisser le long
+    // de la paroi et elle restait collée derrière, à pousser dans le vide. Le
+    // joueur se mettait à couvert et l'attaque s'arrêtait net.
+    // Le cendre, et non le rose : il repère à 12,5 tuiles là où le rose s'arrête
+    // à 8,3. Trop loin, le traqueur ne sait même pas que le joueur existe et
+    // patrouille — on ne mesurerait plus rien.
+    const world = openWorld(20, 20);
+    wallWithGap(world, 10, 14);
+    const player = addPlayer(world, 4, 10);
+    const hunter = addEnemy(world, 'ash', 14, 10);
+
+    const start = Math.hypot(hunter.x - player.x, hunter.y - player.y);
+    for (let i = 0; i < 25 * TICK_RATE && player.alive; i++) tick(world, []);
+
+    // Il a franchi le mur : il est du même côté que le joueur.
+    expect(hunter.x).toBeLessThan(10);
+    expect(Math.hypot(hunter.x - player.x, hunter.y - player.y)).toBeLessThan(start / 2);
+  });
+
+  test('sans chemin du tout, il patrouille au lieu de s\'écraser', () => {
+    // Cible enfermée : pousser dans un mur se lit comme une panne. Le tank doit
+    // continuer de vivre sa vie.
+    const world = openWorld(20, 20);
+    for (let y = 0; y < 20; y++) setTile(world.grid, 10, y, TileKind.Indestructible);
+    addPlayer(world, 4, 10);
+    const hunter = addEnemy(world, 'ash', 14, 10);
+
+    const from = { x: hunter.x, y: hunter.y };
+    for (let i = 0; i < 10 * TICK_RATE; i++) tick(world, []);
+
+    expect(Math.hypot(hunter.x - from.x, hunter.y - from.y)).toBeGreaterThan(1);
+  });
+
+  test('un poseur de mines perce un mur cassable au lieu d\'en faire le tour', () => {
+    // Les mines détruisent le terrain cassable, et l'IA l'ignorait : elle
+    // contournait sagement une cloison de liège qu'elle pouvait ouvrir. C'est
+    // pourtant la seule façon de prendre en tenaille un joueur retranché.
+    const world = openWorld(20, 20);
+    for (let y = 0; y < 20; y++) setTile(world.grid, 10, y, TileKind.Destructible);
+    const player = addPlayer(world, 4, 10);
+    addEnemy(world, 'white', 14, 10);
+
+    const before = world.grid.tiles.filter((t) => t === TileKind.Destructible).length;
+    for (let i = 0; i < 40 * TICK_RATE && player.alive; i++) tick(world, []);
+    const after = world.grid.tiles.filter((t) => t === TileKind.Destructible).length;
+
+    expect(after).toBeLessThan(before);
+  });
+
+  test('les alliés ne restent pas collés les uns aux autres', () => {
+    // Tous poursuivent la même cible par le même chemin : sans rien pour les
+    // séparer ils s'empilent, se masquent la ligne de tir et se tirent dessus.
+    // Le turquoise en donnait le cas le plus net — il se fige dès qu'il tient
+    // son angle, et le suivant venait se coller à lui.
+    const world = openWorld(30, 20);
+    addPlayer(world, 14, 10);
+    const a = addEnemy(world, 'teal', 20, 10);
+    const b = addEnemy(world, 'teal', 20.8, 10);
+
+    // On laisse cinq secondes de dégagement — ils partent quasiment l'un sur
+    // l'autre — puis on vérifie qu'ils **restent** séparés. Sans répulsion ils
+    // ne se décollaient jamais, pas même au bout de quinze secondes.
+    let collés = 0;
+    for (let i = 0; i < 15 * TICK_RATE; i++) {
+      tick(world, []);
+      if (i < 5 * TICK_RATE) continue;
+      if (a.alive && b.alive && Math.hypot(a.x - b.x, a.y - b.y) < 1.5) collés++;
+    }
+
+    expect(collés).toBe(0);
   });
 });
 

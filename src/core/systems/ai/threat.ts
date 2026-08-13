@@ -63,8 +63,16 @@ export function findEvasion(
   let evasion: EvasionVector | null = null;
 
   for (const shell of shells) {
-    // Un tank n'esquive pas ses propres obus : ils partent de lui.
-    if (shell.ownerId === tank.id) continue;
+    // Ses propres obus comptent **une fois armés**, et pas avant : tant que
+    // l'obus chevauche encore son canon il ne peut pas le tuer, et fuir sa
+    // propre bouche de tir n'aurait aucun sens.
+    //
+    // Passé l'armement, c'est une autre affaire : la règle du jeu veut qu'on
+    // puisse se tuer avec son propre ricochet, et l'audit des morts a montré
+    // des traqueurs qui tiraient vers un mur proche puis fonçaient dans l'obus
+    // revenu de bande. Un tank qui ignore son propre ricochet n'est pas
+    // prudent, il est aveugle.
+    if (shell.ownerId === tank.id && !shell.armed) continue;
 
     const speed = Math.hypot(shell.vx, shell.vy);
     if (speed === 0) continue;

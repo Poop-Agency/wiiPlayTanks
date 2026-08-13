@@ -224,7 +224,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     aimErrorRadians: 0.4,
     detectionRangeTiles: LONG_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: false,
+      leadsTarget: false,
     // « Esquive parfois ». Réglé à la mesure : à 0,25 il survit à six obus sur
     // dix, là où un tank de même vitesse qui n'esquive pas s'en tire trois fois
     // sur dix par la seule grâce de sa patrouille. Au-dessus de 0,3 il devient
@@ -247,10 +247,14 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     fireIntervalSeconds: 2.5,
     fireIntervalJitterSeconds: 0,
     mineIntervalSeconds: 0,
-    aimErrorRadians: 0.3,
+    // Sa roquette ne rebondit pas : une balle perdue l'est définitivement,
+    // là où un obus manqué peut encore revenir de bande. Un cône trop serré en
+    // faisait un tireur presque aussi fiable que le vert dès qu'il tenait son
+    // angle, ce qu'il n'est pas censé être. ±11°.
+    aimErrorRadians: 0.38,
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: false,
+      leadsTarget: false,
     // Le relevé ne lui prête aucune esquive : il cherche sa ligne, il ne
     // regarde pas ce qui vient.
     evasionSkill: 0,
@@ -285,7 +289,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     aimErrorRadians: 0.6,
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: false,
+      leadsTarget: false,
     // Aucune esquive : s'il survit à un obus, c'est que sa trajectoire
     // erratique l'avait déjà sorti du couloir, pas qu'il l'a vu venir.
     evasionSkill: 0,
@@ -309,7 +313,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: false,
+      leadsTarget: false,
     // Aucune esquive : il fonce, c'est tout son propos.
     evasionSkill: 0,
     plannedBounces: 1,
@@ -335,7 +339,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     aimErrorRadians: 0.05,
     detectionRangeTiles: LONG_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: false,
+      leadsTarget: false,
     // Immobile : la question ne se pose pas.
     evasionSkill: 0,
     plannedBounces: 2,
@@ -358,12 +362,17 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: false,
+      leadsTarget: false,
     // ⚠ Déduit, pas relevé : la fiche ne mentionne l'esquive ni pour le violet
-    // ni pour le blanc, mais leur prête une « IA avancée ». On leur laisse une
-    // anticipation partielle, en retrait de celle du noir, à qui le relevé
-    // réserve explicitement l'esquive active.
-    evasionSkill: 0.6,
+    // ni pour le blanc, mais leur prête une « IA avancée ».
+    //
+    // Même préavis que le cendre, et ce n'est pas une négligence : au-delà de
+    // 0,2 sa courbe est parfaitement plate (21 à 23 morts sur 80 quel que soit
+    // le réglage jusqu'à 0,6). À 130 % de vitesse, il lui suffit d'un préavis
+    // minime pour dégager le couloir. Sa supériorité sur le cendre vient de son
+    // châssis, pas de sa vigilance — mettre plus ici ne ferait qu'écrire un
+    // chiffre sans effet.
+    evasionSkill: 0.25,
     plannedBounces: 1,
     movement: 'flank',
     preferredRangeTiles: 3,
@@ -384,8 +393,12 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     aimErrorRadians: 0.2,
     detectionRangeTiles: STANDARD_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: false,
-    // ⚠ Déduit comme celle du violet, dont il partage l'armement.
+      leadsTarget: false,
+    // ⚠ Déduit comme celle du violet, dont il partage l'armement — mais **plus
+    // haut**, et c'est mesuré : à 100 % de vitesse il lui faut nettement plus
+    // de préavis pour parcourir la même distance latérale. Sa courbe descend
+    // encore de 31 morts sur 80 à 0,25, à 14 à 0,6. L'aligner sur le violet le
+    // rendrait deux fois plus facile à tuer, à armement identique.
     evasionSkill: 0.6,
     plannedBounces: 1,
     movement: 'hunt',
@@ -407,7 +420,7 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     aimErrorRadians: 0.25,
     detectionRangeTiles: LONG_RANGE,
     firingRangeTiles: Number.POSITIVE_INFINITY,
-    leadsTarget: true,
+      leadsTarget: true,
     // « Esquive activement » : pleine anticipation, la seule du jeu.
     evasionSkill: 1,
     plannedBounces: 0,

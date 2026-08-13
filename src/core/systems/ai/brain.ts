@@ -15,12 +15,13 @@
 import { blocksTank, boxOverlapsSolid } from '../../grid.js';
 import { normalizeAngle } from '../../math.js';
 import { nextFloat, nextRange } from '../../rng.js';
-import { DT, secondsToTicks } from '../../tick.js';
+import { DT, TICK_RATE, secondsToTicks } from '../../tick.js';
 import { TUNING } from '../../tuning.js';
-import { findFiringSolution } from './aiming.js';
+import { findFiringSolution, pathReaches, traceShellPath } from './aiming.js';
+import { breachGain, canReachSafety, hasClearPath, navigationHeading } from './navigation.js';
 import { profileOf } from './profiles.js';
 import { findEvasion } from './threat.js';
-import type { InputCommand, Tank, TankAiState, World } from '../../state.js';
+import type { InputCommand, Mine, Tank, TankAiState, World } from '../../state.js';
 import type { TankProfile } from './profiles.js';
 
 /**
@@ -80,6 +81,203 @@ function findNearestPlayer(world: World, tank: Tank): { tank: Tank; distance: nu
   return best ? { tank: best, distance: bestDistance } : null;
 }
 
+/**
+ * Nombre d'angles essayés dans le cône d'erreur avant d'autoriser un tir.
+ *
+ * Impair, pour que l'angle nominal soit toujours du lot. Cinq suffisent : un
+ * châssis à trois tuiles occupe déjà plus du quart du cône le plus large, si
+ * bien qu'un allié ne peut pas se glisser entre deux échantillons.
+ */
+const SAFETY_SAMPLES = 5;
+
+/** Vitesse du projectile de ce profil, en tuiles par seconde. */
+function shellSpeed(profile: TankProfile): number {
+  return profile.shellKind === 'fast'
+    ? TUNING.shell.fastSpeedTilesPerSecond
+    : TUNING.shell.normalSpeedTilesPerSecond;
+}
+
+/**
+ * Le tir est-il sûr sur toute la largeur du cône d'erreur ?
+ *
+ * `findFiringSolution` écarte déjà les angles qui traversent un allié — mais
+ * seulement pour l'angle **nominal**, et seulement au moment du calcul. Deux
+ * trous en découlaient, et l'audit des morts les a confirmés tous les deux :
+ *
+ *   - l'écart de visée est tiré **au tir**, après la validation. Un angle jugé
+ *     sûr au centre du cône ne l'est plus à ±5,7°, et l'obus revient de bande
+ *     dans son propre tireur ;
+ *   - l'angle est mis en cache et rejoué pendant douze pas. Un allié qui file à
+ *     130 % de la vitesse du joueur parcourt les deux tiers d'une tuile
+ *     entre-temps, largement de quoi se placer dans la trajectoire.
+ *
+ * D'où cette vérification, refaite **à l'instant du tir** et sur tout le cône.
+ * Le tank ne corrige pas son angle : il **s'abstient**. C'est le comportement
+ * juste — on ne tire pas dans le dos d'un allié — et il ne coûte rien puisqu'il
+ * ne s'exécute qu'au moment où le tir est déjà décidé.
+ */
+function shotIsSafe(
+  world: World,
+  tank: Tank,
+  profile: TankProfile,
+  target: Tank,
+  angle: number,
+): boolean {
+  const hitRadius = TUNING.tank.sizeTiles / 2;
+  // Le tireur ne compte que passé son propre châssis : l'obus s'arme en
+  // quittant le canon, il ne peut pas le tuer avant d'en être sorti.
+  const ignoreBefore = TUNING.tank.sizeTiles;
+  const half = profile.aimErrorRadians / 2;
+
+  for (let sample = 0; sample < SAFETY_SAMPLES; sample++) {
+    const offset = -half + (sample / (SAFETY_SAMPLES - 1)) * profile.aimErrorRadians;
+    const path = traceShellPath(world.grid, tank.x, tank.y, angle + offset, profile.shellBounces);
+
+    // Tout ce qui suit l'impact sur la cible est fiction : l'obus disparaît en
+    // la touchant. Ne pas s'arrêter là rendait le brun définitivement muet — sa
+    // trajectoire de rebond repasse par lui après avoir traversé le joueur, et
+    // la vérification y voyait un suicide qui n'aurait jamais lieu.
+    const untilTarget = pathReaches(path, target.x, target.y, hitRadius) ?? Number.POSITIVE_INFINITY;
+
+    // Le risque pour **soi** ne s'évalue que sur l'angle nominal : se tuer avec
+    // son propre ricochet est une règle assumée du jeu, et l'étendre à tout le
+    // cône ferait taire les tanks au cône large. Le tank a par ailleurs
+    // `findEvasion` pour s'écarter de son obus une fois celui-ci armé.
+    if (offset === 0) {
+      const self = pathReaches(path, tank.x, tank.y, hitRadius, ignoreBefore);
+      if (self !== null && self < untilTarget) return false;
+    }
+
+    for (const other of world.tanks) {
+      if (!other.alive || other.id === tank.id || other.playerId !== null) continue;
+
+      // Marge d'anticipation : l'allié n'est pas figé. Le temps que l'obus
+      // arrive, il aura pu se déplacer de sa vitesse propre — on élargit donc
+      // sa boîte de ce trajet-là. Sans cette marge, l'obus part sur un couloir
+      // libre et l'allié s'y engage une fraction de seconde plus tard, ce qui
+      // était de loin la première cause de tir fratricide relevée à l'audit.
+      const straight = Math.hypot(other.x - tank.x, other.y - tank.y);
+      const drift =
+        TUNING.tank.speedTilesPerSecond *
+        profileOf(other.color).speedMultiplier *
+        (straight / shellSpeed(profile));
+
+      const hit = pathReaches(path, other.x, other.y, hitRadius + drift);
+      if (hit !== null && hit < untilTarget) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Raccourci minimal, en cases, pour qu'il vaille la peine de faire sauter un
+ * bloc plutôt que de le contourner.
+ *
+ * Trop bas, les poseurs raboteraient le décor à la moindre économie de pas.
+ * Trois cases correspondent à un vrai détour évité, pas à un arrondi.
+ */
+const BREACH_MIN_GAIN_TILES = 3;
+
+/**
+ * Un bloc cassable à portée de souffle raccourcirait-il vraiment le chemin ?
+ *
+ * Les mines détruisent le terrain cassable ; l'IA l'ignorait complètement et
+ * faisait sagement le tour d'un mur de liège qu'elle pouvait percer. C'est
+ * pourtant la seule façon de prendre en tenaille un joueur retranché derrière
+ * une cloison — et sur un tracé comme la mission 9, où une colonne de liège
+ * coupe l'arène dans toute sa hauteur, c'est la différence entre attaquer et
+ * défiler.
+ *
+ * On ne mine pas n'importe quel bloc à portée : seulement celui qui ouvre un
+ * vrai raccourci, ou qui rend joignable une cible qui ne l'était pas.
+ */
+function worthBreaching(world: World, tank: Tank, target: Tank | null): boolean {
+  if (!target) return false;
+  // Un passage déjà dégagé n'a rien à percer.
+  if (hasClearPath(world.grid, tank.x, tank.y, target.x, target.y)) return false;
+
+  const reach = TUNING.mine.blastRadiusTiles;
+  const minX = Math.floor(tank.x - reach);
+  const maxX = Math.floor(tank.x + reach);
+  const minY = Math.floor(tank.y - reach);
+  const maxY = Math.floor(tank.y + reach);
+
+  for (let tileY = minY; tileY <= maxY; tileY++) {
+    for (let tileX = minX; tileX <= maxX; tileX++) {
+      // Le souffle est circulaire : le coin d'une boîte carrée ne compte pas.
+      if (Math.hypot(tileX + 0.5 - tank.x, tileY + 0.5 - tank.y) > reach) continue;
+      if (breachGain(world.grid, tank.x, tank.y, target.x, target.y, tileX, tileY) >= BREACH_MIN_GAIN_TILES) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/** Distance en dessous de laquelle deux tanks alliés se repoussent, en tuiles. */
+const SPREAD_RADIUS_TILES = 3;
+
+/**
+ * Poids de la répulsion entre alliés face à la direction voulue.
+ *
+ * En dessous de 1 : la consigne d'origine reste dominante, la répulsion ne fait
+ * que l'infléchir. Au-delà, les tanks se fuiraient au lieu de faire leur
+ * travail.
+ */
+const SPREAD_WEIGHT = 0.8;
+
+/**
+ * Infléchit une direction pour éviter que les alliés ne s'agglutinent.
+ *
+ * Tous les tanks d'une mission poursuivent la même cible par le même chemin :
+ * sans rien pour les séparer, ils s'empilent, arrivent en colonne, se masquent
+ * mutuellement la ligne de tir et se tirent dessus. Le turquoise en donnait le
+ * cas le plus visible — il se fige dès qu'il tient un angle, si bien que le
+ * suivant vient se coller à lui.
+ *
+ * Une simple répulsion de proximité suffit à les étaler. Elle est pondérée en
+ * inverse de la distance pour n'agir qu'au contact, et reste minoritaire face à
+ * la consigne d'origine : le but est d'arriver **en éventail**, pas de renoncer
+ * à approcher.
+ */
+function spreadOut(
+  world: World,
+  tank: Tank,
+  heading: { x: number; y: number },
+): { x: number; y: number } {
+  const length = Math.hypot(heading.x, heading.y);
+
+  let pushX = 0;
+  let pushY = 0;
+
+  for (const other of world.tanks) {
+    if (!other.alive || other.id === tank.id || other.playerId !== null) continue;
+
+    const dx = tank.x - other.x;
+    const dy = tank.y - other.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance === 0 || distance > SPREAD_RADIUS_TILES) continue;
+
+    const weight = (SPREAD_RADIUS_TILES - distance) / SPREAD_RADIUS_TILES;
+    pushX += (dx / distance) * weight;
+    pushY += (dy / distance) * weight;
+  }
+
+  const push = Math.hypot(pushX, pushY);
+  if (push === 0) return heading;
+
+  // Consigne nulle et voisin trop proche : c'est le cas du turquoise, qui se
+  // fige dès qu'il tient son angle. Il se décale au lieu de rester collé.
+  if (length === 0) return { x: pushX / push, y: pushY / push };
+
+  const x = heading.x / length + (pushX / push) * SPREAD_WEIGHT;
+  const y = heading.y / length + (pushY / push) * SPREAD_WEIGHT;
+  const total = Math.hypot(x, y);
+  return total === 0 ? heading : { x: x / total, y: y / total };
+}
+
 /** Direction de déplacement voulue, avant prise en compte des obstacles. */
 function desiredHeading(
   world: World,
@@ -104,8 +302,20 @@ function desiredHeading(
   const distance = Math.hypot(toTargetX, toTargetY);
   if (distance === 0) return roam();
 
-  const towards = { x: toTargetX / distance, y: toTargetY / distance };
-  const away = { x: -towards.x, y: -towards.y };
+  // Direction brute vers la cible, sans tenir compte du terrain. Elle sert
+  // encore de repère pour le recul et pour l'approche en biais, où ce qui
+  // compte est l'orientation relative à l'adversaire, pas le chemin.
+  const direct = { x: toTargetX / distance, y: toTargetY / distance };
+  const away = { x: -direct.x, y: -direct.y };
+
+  // Direction réellement praticable : ligne droite s'il y a vue dégagée, chemin
+  // contourné sinon. C'est ce qui empêche un traqueur de rester collé derrière
+  // un mur à pousser dans le vide pendant que le joueur se met à couvert.
+  //
+  // Sans chemin du tout — cible enfermée, ou mine bouchant le seul passage —
+  // on reprend la patrouille : pousser dans un obstacle ne mène nulle part et
+  // se lit comme une panne.
+  const towards = navigationHeading(world, tank.x, tank.y, target.x, target.y);
 
   switch (profile.movement) {
     case 'keepAway':
@@ -114,7 +324,7 @@ function desiredHeading(
       return distance < profile.preferredRangeTiles ? away : roam();
 
     case 'hunt':
-      return distance > profile.preferredRangeTiles ? towards : roam();
+      return distance > profile.preferredRangeTiles ? (towards ?? roam()) : roam();
 
     case 'seekLine':
       // Tant qu'aucun angle n'est ouvert, se replacer ; dès qu'il y en a un,
@@ -124,7 +334,7 @@ function desiredHeading(
       if (ai.solutionAngle !== null) {
         return distance < profile.preferredRangeTiles ? away : { x: 0, y: 0 };
       }
-      return towards;
+      return towards ?? roam();
 
     case 'flank': {
       // Ni de face ni à l'opposé : en biais. On vise un point décalé d'un
@@ -133,12 +343,18 @@ function desiredHeading(
       // pour toutes par la parité de l'identifiant : tiré à chaque pas, le
       // tank oscillerait sur place, et lâchés à plusieurs ils contourneraient
       // tous du même côté — ce qui n'est pas une tenaille.
+      // Le biais n'a de sens qu'en vue dégagée. Derrière un mur, la priorité
+      // est de rejoindre l'adversaire ; contourner *et* obliquer produisait des
+      // trajectoires qui repartaient à l'opposé du seul passage.
+      if (!towards) return roam();
+      if (towards.detoured) return towards;
+
       const side = tank.id % 2 === 0 ? 1 : -1;
-      const perpendicular = { x: -towards.y * side, y: towards.x * side };
+      const perpendicular = { x: -direct.y * side, y: direct.x * side };
       const closing = distance > profile.preferredRangeTiles ? 1 : -1;
 
-      const x = towards.x * closing + perpendicular.x;
-      const y = towards.y * closing + perpendicular.y;
+      const x = direct.x * closing + perpendicular.x;
+      const y = direct.y * closing + perpendicular.y;
       const length = Math.hypot(x, y);
       return length === 0 ? roam() : { x: x / length, y: y / length };
     }
@@ -146,7 +362,7 @@ function desiredHeading(
     case 'erratic':
       // Alterne approche et errance selon la direction de patrouille courante,
       // ce qui donne son allure imprévisible au tank jaune.
-      return Math.cos(ai.roamAngle) > 0 ? towards : roam();
+      return Math.cos(ai.roamAngle) > 0 ? (towards ?? roam()) : roam();
 
     case 'patrol':
     default:
@@ -187,6 +403,29 @@ function updateRoaming(world: World, tank: Tank, ai: TankAiState): void {
 
 /** Multiple du rayon de souffle à partir duquel un tank fuit une mine. */
 const MINE_FLIGHT_RADIUS_FACTOR = 2;
+
+/**
+ * Distance à laquelle **cette** mine-ci est encore dangereuse pour ce tank.
+ *
+ * Pas un rayon fixe, mais le rayon de souffle augmenté de ce que le tank peut
+ * parcourir avant la détonation. C'est la seule formulation correcte de « je
+ * peux encore me faire prendre » : un rayon constant laissait le poseur sortir
+ * de la zone, reprendre sa patrouille, et revenir pile au moment où la mèche
+ * arrivait au bout. La moitié des suicides relevés à l'audit venaient de là.
+ *
+ * Le rayon **rétrécit** à mesure que la mèche brûle, et vaut le simple souffle
+ * à la détonation : la fuite se relâche d'elle-même, sans mémoire ni minuteur
+ * supplémentaire dans l'état.
+ */
+function mineDangerRadius(mine: Mine, profile: TankProfile): number {
+  const remainingSeconds = mine.fuseTicks / TICK_RATE;
+  const speed = TUNING.tank.speedTilesPerSecond * profile.speedMultiplier;
+  // Le souffle tue à son rayon **plus la demi-boîte du châssis** ; l'oublier
+  // relâchait la fuite une fraction de tuile trop tôt, et le tank revenait
+  // mourir dessus. On prend la boîte entière, pour que la limite ne soit pas
+  // exactement mortelle.
+  return TUNING.mine.blastRadiusTiles + TUNING.tank.sizeTiles + speed * remainingSeconds;
+}
 
 /** Multiple du rayon de fuite imposé entre deux mines posées par l'IA. */
 const MINE_SPACING_FACTOR = 1.5;
@@ -230,7 +469,7 @@ function mineSpacing(): number {
  * Le rayon de fuite dépasse franchement celui du souffle. S'en tenir au rayon
  * exact ferait osciller le tank sur la limite, et la limite est mortelle.
  */
-function findMineEscape(world: World, tank: Tank): { x: number; y: number } | null {
+function findMineEscape(world: World, tank: Tank, profile: TankProfile): { x: number; y: number } | null {
   if (world.mines.length === 0) return null;
 
   let x = 0;
@@ -240,7 +479,7 @@ function findMineEscape(world: World, tank: Tank): { x: number; y: number } | nu
     const dx = tank.x - mine.x;
     const dy = tank.y - mine.y;
     const distance = Math.hypot(dx, dy);
-    if (distance === 0 || distance > mineFlightRadius()) continue;
+    if (distance === 0 || distance > mineDangerRadius(mine, profile)) continue;
 
     // Poids en inverse de la distance, et non linéaire : pris entre deux mines,
     // un tank qui les pondérait à parts presque égales partait en biais et
@@ -312,13 +551,37 @@ const ESCAPE_FAN_RADIANS = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI 
 function canLeaveMineBehind(
   world: World,
   tank: Tank,
+  profile: TankProfile,
   heading: { x: number; y: number },
+  target: Tank | null,
   targetDistance: number,
+  breaching: boolean,
 ): boolean {
   const length = Math.hypot(heading.x, heading.y);
   if (length === 0) return false;
 
   if (targetDistance <= TUNING.mine.blastRadiusTiles) return false;
+
+  // Le tank doit **s'éloigner** de sa cible. C'est la condition qui manquait, et
+  // celle qui explique l'essentiel des suicides : une mine est un piège qu'on
+  // laisse derrière soi, pas une bombe qu'on lâche sous ses chenilles en
+  // chargeant. Un traqueur qui posait en approche restait dans le souffle par
+  // construction — il continuait d'avancer vers l'adversaire, donc de tourner
+  // autour du point qu'il venait de miner, et aucune logique de fuite ne
+  // rattrapait ça.
+  //
+  // Une exception, et une seule : percer un mur. Le bloc à faire sauter est
+  // forcément devant, du côté de l'adversaire — exiger de s'en éloigner
+  // reviendrait à interdire la brèche.
+  if (target && !breaching) {
+    const toTargetX = target.x - tank.x;
+    const toTargetY = target.y - tank.y;
+    const span = Math.hypot(toTargetX, toTargetY);
+    if (span > 0) {
+      const closing = (heading.x / length) * (toTargetX / span) + (heading.y / length) * (toTargetY / span);
+      if (closing > 0) return false;
+    }
+  }
 
   for (const mine of world.mines) {
     if (Math.hypot(mine.x - tank.x, mine.y - tank.y) < mineSpacing()) return false;
@@ -331,14 +594,27 @@ function canLeaveMineBehind(
     if (Math.hypot(other.x - tank.x, other.y - tank.y) < mineFlightRadius()) return false;
   }
 
-  const escape = TUNING.mine.blastRadiusTiles + TUNING.tank.sizeTiles;
-  return !boxOverlapsSolid(
+  const lethal = TUNING.mine.blastRadiusTiles + TUNING.tank.sizeTiles;
+
+  // Le couloir de fuite doit être franchissable sur toute sa longueur, pas
+  // seulement libre à son extrémité : un point d'arrivée dégagé derrière un
+  // bloc ne mène nulle part. Sans objet pour une brèche, où le tank vient
+  // justement se coller au mur qu'il veut ouvrir : seule compte alors la
+  // question de savoir s'il peut se mettre à l'abri, testée juste après.
+  if (!breaching && !hasClearPath(
     world.grid,
-    tank.x + (heading.x / length) * escape,
-    tank.y + (heading.y / length) * escape,
-    TUNING.tank.sizeTiles / 2,
-    blocksTank,
-  );
+    tank.x,
+    tank.y,
+    tank.x + (heading.x / length) * lethal,
+    tank.y + (heading.y / length) * lethal,
+  )) {
+    return false;
+  }
+
+  const budget =
+    TUNING.tank.speedTilesPerSecond * profile.speedMultiplier * TUNING.mine.fuseSeconds;
+
+  return canReachSafety(world.grid, tank.x, tank.y, lethal, budget);
 }
 
 /**
@@ -458,8 +734,10 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   const fire =
     profile.maxActiveShells > 0 &&
     ai.solutionAngle !== null &&
+    target !== null &&
     aligned &&
-    ai.fireCooldownTicks === 0;
+    ai.fireCooldownTicks === 0 &&
+    shotIsSafe(world, tank, profile, target, aim);
 
   if (fire) {
     const jitter = profile.fireIntervalJitterSeconds * nextFloat(world.rng);
@@ -480,7 +758,7 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
   // conservation, pas du talent — sans elle le jaune se tue dans son propre
   // champ, ce qui ne ressemble à rien.
   const mobile = profile.speedMultiplier > 0 && profile.movement !== 'hold';
-  const flight = mobile ? findMineEscape(world, tank) : null;
+  const flight = mobile ? findMineEscape(world, tank, profile) : null;
   const evasion =
     flight ??
     (mobile
@@ -490,7 +768,8 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
           TUNING.ai.evasionHorizonSeconds * profile.evasionSkill,
         )
       : null);
-  const heading = evasion ?? desiredHeading(world, tank, ai, profile, moveTarget);
+  const wanted = desiredHeading(world, tank, ai, profile, moveTarget);
+  const heading = evasion ?? (mobile ? spreadOut(world, tank, wanted) : wanted);
 
   // ── Mines ──
   // Le quota et le rechargement restent ceux de `layMine`, qui a le dernier
@@ -499,7 +778,15 @@ export function decideAiInput(world: World, tank: Tank): InputCommand {
     profile.mineIntervalSeconds > 0 &&
     ai.mineCooldownTicks === 0 &&
     tank.activeMines < profile.maxActiveMines &&
-    canLeaveMineBehind(world, tank, heading, nearest?.distance ?? Infinity);
+    canLeaveMineBehind(
+      world,
+      tank,
+      profile,
+      heading,
+      nearest?.tank ?? null,
+      nearest?.distance ?? Infinity,
+      worthBreaching(world, tank, moveTarget),
+    );
 
   if (laying) {
     ai.mineCooldownTicks = secondsToTicks(profile.mineIntervalSeconds);
