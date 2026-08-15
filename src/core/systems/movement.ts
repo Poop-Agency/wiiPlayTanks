@@ -55,35 +55,82 @@ export function applyMovement(world: World, tank: Tank, input: InputCommand): vo
     // déplacement entier dès qu'un seul des deux est bloqué.
     const originX = tank.x;
     tank.x = sweepAxis(world.grid, tank.x, tank.y, half, blocksTank, 'x', direction.x * step);
-    if (overlapsAnotherTank(world, tank)) tank.x = originX;
+    if (!clearOfOtherTanks(world, tank, 'x', direction.x * step)) tank.x = originX;
 
     const originY = tank.y;
     tank.y = sweepAxis(world.grid, tank.x, tank.y, half, blocksTank, 'y', direction.y * step);
-    if (overlapsAnotherTank(world, tank)) tank.y = originY;
+    if (!clearOfOtherTanks(world, tank, 'y', direction.y * step)) tank.y = originY;
   }
 }
 
+/** Les tanks vivants que celui-ci chevauche à sa position courante. */
+function tanksOverlapping(world: World, tank: Tank): Tank[] {
+  const size = TUNING.tank.sizeTiles;
+  const found: Tank[] = [];
+
+  for (const other of world.tanks) {
+    if (other.id === tank.id || !other.alive) continue;
+    if (Math.abs(other.x - tank.x) < size && Math.abs(other.y - tank.y) < size) found.push(other);
+  }
+
+  return found;
+}
+
 /**
- * Le tank chevauche-t-il un autre tank vivant ?
+ * La place est-elle libre pour ce tank, quitte à écarter ce qui gêne ?
  *
  * Les tanks sont des obstacles les uns pour les autres : sans ça, deux tanks de
  * l'IA qui convergent vers la même position finissent superposés, ce qui est
  * autant un défaut visuel qu'un défaut de jeu — deux tanks empilés se
  * comportent comme un seul.
  *
+ * **Sauf que les tanks fixes, eux, se laissent pousser.** C'est une mécanique du
+ * jeu original : « the moving tanks can push the fixed tanks around », et c'est
+ * ce qui permet de faire glisser un vert le long d'un mur pour aller le miner de
+ * l'autre côté. Un brun ou un vert bousculé cède donc le passage ; deux châssis
+ * mobiles continuent de se bloquer l'un l'autre.
+ *
+ * La poussée ne se propage pas : si le tank écarté vient buter sur un mur ou sur
+ * un troisième, rien ne bouge et l'axe est annulé. Une chaîne de poussées
+ * ouvrirait la porte à des récursions dont le coût dépendrait du nombre de tanks
+ * alignés, pour un cas de figure qu'on ne voit jamais en jeu.
+ *
  * Le test est fait après chaque axe, et l'axe fautif est simplement annulé. Un
  * tank bloqué par un autre glisse donc le long de lui, exactement comme le long
  * d'un mur.
  */
-function overlapsAnotherTank(world: World, tank: Tank): boolean {
-  const size = TUNING.tank.sizeTiles;
+function clearOfOtherTanks(world: World, tank: Tank, axis: 'x' | 'y', delta: number): boolean {
+  const blockers = tanksOverlapping(world, tank);
+  if (blockers.length === 0) return true;
 
-  for (const other of world.tanks) {
-    if (other.id === tank.id || !other.alive) continue;
-    if (Math.abs(other.x - tank.x) < size && Math.abs(other.y - tank.y) < size) return true;
+  const half = TUNING.tank.sizeTiles / 2;
+  const displaced: Array<{ tank: Tank; x: number; y: number }> = [];
+
+  const undo = (): false => {
+    for (const entry of displaced) {
+      entry.tank.x = entry.x;
+      entry.tank.y = entry.y;
+    }
+    return false;
+  };
+
+  for (const other of blockers) {
+    if (profileOf(other.color).speedMultiplier !== 0) return undo();
+
+    displaced.push({ tank: other, x: other.x, y: other.y });
+
+    if (axis === 'x') {
+      other.x = sweepAxis(world.grid, other.x, other.y, half, blocksTank, 'x', delta);
+    } else {
+      other.y = sweepAxis(world.grid, other.x, other.y, half, blocksTank, 'y', delta);
+    }
+
+    // Le poussé doit avoir vraiment libéré la place — ce que ce test couvre,
+    // puisque le pousseur figure lui-même parmi les tanks qu'on lui compare.
+    if (tanksOverlapping(world, other).length > 0) return undo();
   }
 
-  return false;
+  return true;
 }
 
 /**

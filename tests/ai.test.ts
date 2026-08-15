@@ -603,18 +603,37 @@ describe('comportements propres à chaque couleur', () => {
     }
   });
 
-  test('le gris se rapproche au lieu de reculer', () => {
-    // La fiche le décrit comme suivant le joueur ; il gardait ses distances.
-    // Placé dans sa portée de détection, sans quoi il ne réagit pas du tout.
-    const world = openWorld(30, 20);
-    const player = addPlayer(world, 5, 10);
-    const ash = addEnemy(world, 'ash', 15, 10);
-    const start = Math.hypot(ash.x - player.x, ash.y - player.y);
+  test('le gris patrouille au lieu de traquer', () => {
+    // « Their turrets mildly seek the player, but their movement does not. »
+    // Une version antérieure le faisait traquer, sur la foi d'un relevé plus
+    // ancien ; le wiki du jeu original dit l'inverse.
+    //
+    // Une seule partie ne prouve rien : la patrouille est tirée au sort, et il
+    // arrive qu'elle mène droit sur le joueur. Ce qui sépare un patrouilleur
+    // d'un traqueur, c'est la **proportion** — le second se rapproche à tous
+    // les coups. Mesuré ici : dix parties sur trente. Un traqueur donnerait
+    // trente sur trente.
+    //
+    // Et non, on ne peut pas simplement comparer deux mondes identiques où
+    // seule la position du joueur change : la graine du monde est partagée, et
+    // le tir du gris y puise. Deux positions de joueur donnent deux flux
+    // d'aléas différents, donc deux patrouilles différentes — même si le
+    // châssis ignore parfaitement sa cible.
+    const runs = 30;
+    let closer = 0;
 
-    advance(world, 2 * TICK_RATE);
+    for (let seed = 1; seed <= runs; seed++) {
+      const world = createWorld({ width: 30, height: 20, seed });
+      const player = addPlayer(world, 5, 10);
+      const ash = addEnemy(world, 'ash', 15, 10);
+      const start = Math.hypot(ash.x - player.x, ash.y - player.y);
 
-    expect(player.alive).toBe(true);
-    expect(Math.hypot(ash.x - player.x, ash.y - player.y)).toBeLessThan(start);
+      advance(world, 4 * TICK_RATE);
+      if (Math.hypot(ash.x - player.x, ash.y - player.y) < start) closer++;
+    }
+
+    expect(closer).toBeGreaterThan(3);
+    expect(closer).toBeLessThan(runs - 3);
   });
 
   /**
@@ -864,20 +883,22 @@ describe('navigation', () => {
     // cible. Devant un mur, le système de mouvement la faisait glisser le long
     // de la paroi et elle restait collée derrière, à pousser dans le vide. Le
     // joueur se mettait à couvert et l'attaque s'arrêtait net.
-    // Le cendre, et non le rose : il repère à 12,5 tuiles là où le rose s'arrête
-    // à 8,3. Trop loin, le traqueur ne sait même pas que le joueur existe et
-    // patrouille — on ne mesurerait plus rien.
+    //
+    // Le rose : c'est désormais le seul traqueur pur du jeu, le gris s'étant
+    // rangé à la patrouille que lui prête le wiki. Sa portée de détection n'est
+    // que de 8,3 tuiles, d'où le décor resserré — au-delà, il ne sait même pas
+    // que le joueur existe et on ne mesurerait plus qu'une errance.
     const world = openWorld(20, 20);
-    wallWithGap(world, 10, 14);
-    const player = addPlayer(world, 4, 10);
-    const hunter = addEnemy(world, 'ash', 14, 10);
+    wallWithGap(world, 10, 13);
+    const player = addPlayer(world, 6, 10);
+    const hunter = addEnemy(world, 'pink', 13, 10);
 
     const start = Math.hypot(hunter.x - player.x, hunter.y - player.y);
     for (let i = 0; i < 25 * TICK_RATE && player.alive; i++) tick(world, []);
 
     // Il a franchi le mur : il est du même côté que le joueur.
     expect(hunter.x).toBeLessThan(10);
-    expect(Math.hypot(hunter.x - player.x, hunter.y - player.y)).toBeLessThan(start / 2);
+    expect(Math.hypot(hunter.x - player.x, hunter.y - player.y)).toBeLessThan(start);
   });
 
   test('sans chemin du tout, il patrouille au lieu de s\'écraser', () => {
@@ -913,8 +934,8 @@ describe('navigation', () => {
   test('les alliés ne restent pas collés les uns aux autres', () => {
     // Tous poursuivent la même cible par le même chemin : sans rien pour les
     // séparer ils s'empilent, se masquent la ligne de tir et se tirent dessus.
-    // Le turquoise en donnait le cas le plus net — il se fige dès qu'il tient
-    // son angle, et le suivant venait se coller à lui.
+    // Le turquoise en donne le cas le plus net : il garde ses distances avec le
+    // joueur, donc deux turquoises convergent vers le même arc de cercle.
     const world = openWorld(30, 20);
     addPlayer(world, 14, 10);
     const a = addEnemy(world, 'teal', 20, 10);

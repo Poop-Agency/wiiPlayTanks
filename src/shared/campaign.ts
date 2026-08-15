@@ -9,17 +9,23 @@
  * aucune mutation — pour que la transition d'une mission à la suivante soit
  * exactement la même des deux côtés du réseau.
  *
- * ─── ⚠ Règles non mesurées ──────────────────────────────────────────────────
+ * ─── Provenance des règles ──────────────────────────────────────────────────
  *
- * Comme pour la section `mine` de `tuning.ts`, ces trois valeurs ne dérivent
- * d'aucun relevé : l'ancienne version n'avait ni vies, ni progression, ni écran
- * de fin. À confirmer sur le jeu original :
+ * `startingSpares` et `bonusEveryMissions` étaient écrits à l'estime :
+ * l'ancienne version n'avait ni vies, ni progression, ni écran de fin. Le wiki
+ * du jeu original les **confirme** tous les deux — « the player starts with 3
+ * lives. Every five levels, an extra life is rewarded ». Ils ne sont donc plus
+ * des suppositions.
  *
- *   · `startingSpares`     → nombre de tanks de réserve au début d'une partie
- *   · `bonusEveryMissions` → périodicité du tank offert
- *   · et la règle de reprise après un échec : l'original rejoue la mission
- *     perdue, ce qui est reproduit ici, mais renvoie-t-il au début de la
- *     campagne quand la réserve est vide ?
+ * ⚠ Restent non tranchés :
+ *
+ *   · la règle de reprise après un échec — l'original rejoue la mission perdue,
+ *     ce qui est reproduit ici, mais renvoie-t-il au début de la campagne quand
+ *     la réserve est vide ?
+ *   · le **verrou des vingt premières** : d'après le wiki, seules les missions
+ *     1-20 sont accessibles au départ, et les cent ne s'ouvrent qu'une fois la
+ *     vingtième franchie. Pas implémenté ici — la campagne enchaîne 1 → 100
+ *     d'un trait.
  */
 
 import { MISSIONS } from './missions/missions';

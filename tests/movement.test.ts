@@ -169,6 +169,64 @@ describe('glissement le long des murs', () => {
   });
 });
 
+describe('les tanks entre eux', () => {
+  test('un tank mobile pousse un tank fixe', () => {
+    // Mécanique du jeu original : « the moving tanks can push the fixed tanks
+    // around ». C'est ce qui permet de faire glisser un vert le long d'un mur
+    // pour aller le miner depuis l'autre côté.
+    const world = openWorld();
+    const pusher = addTank(world, 10, 10);
+    const fixed = createTank(world, { color: 'green', x: 11, y: 10 });
+    const startX = fixed.x;
+
+    run(world, pusher.id, input({ moveX: 1 }), TICK_RATE);
+
+    expect(fixed.x).toBeGreaterThan(startX + 1);
+    expect(pusher.x).toBeGreaterThan(10);
+    // Il l'a écarté, pas traversé.
+    expect(fixed.x - pusher.x).toBeGreaterThan(0);
+  });
+
+  test('deux tanks mobiles se bloquent au lieu de se pousser', () => {
+    // La poussée est réservée aux châssis immobiles. Entre mobiles, chacun
+    // reste un obstacle — sans quoi une file de tanks se pousserait en chaîne.
+    //
+    // Un seul pas, et par comparaison à un témoin : un adversaire mobile se
+    // déplace de lui-même, donc mesurer sa position au bout d'une seconde ne
+    // dirait rien de ce qui l'a fait bouger.
+    const size = TUNING.tank.sizeTiles;
+
+    const afterOneStep = (blocker: boolean): number => {
+      const world = openWorld();
+      const pusher = addTank(world, 10, 10);
+      if (blocker) createTank(world, { color: 'pink', x: 10 + size, y: 10 });
+      run(world, pusher.id, input({ moveX: 1 }), 1);
+      return pusher.x;
+    };
+
+    expect(afterOneStep(false)).toBeGreaterThan(10);
+    expect(afterOneStep(true)).toBe(10);
+  });
+
+  test('un tank fixe acculé au mur bloque son pousseur', () => {
+    // La poussée doit trouver de la place. Sinon l'axe est annulé, et le
+    // pousseur bute comme sur un mur — c'est ce qui empêche de pousser un vert
+    // au travers de la bordure.
+    const world = openWorld(14, 20);
+    const size = TUNING.tank.sizeTiles;
+    const limit = world.grid.width - size / 2;
+
+    const fixed = createTank(world, { color: 'green', x: limit - 0.1, y: 10 });
+    const pusher = addTank(world, fixed.x - size, 10);
+
+    run(world, pusher.id, input({ moveX: 1 }), TICK_RATE);
+
+    const epsilon = 1e-6;
+    expect(fixed.x).toBeLessThanOrEqual(limit + epsilon);
+    expect(pusher.x).toBeLessThanOrEqual(fixed.x - size + epsilon);
+  });
+});
+
 describe('étanchéité des murs', () => {
   test('aucune direction ne permet de traverser la bordure', () => {
     // Balayage sur 360 directions : un seul angle qui passe suffirait à rendre

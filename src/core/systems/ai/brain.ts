@@ -304,8 +304,8 @@ function spreadOut(
   const push = Math.hypot(pushX, pushY);
   if (push === 0) return heading;
 
-  // Consigne nulle et voisin trop proche : c'est le cas du turquoise, qui se
-  // fige dès qu'il tient son angle. Il se décale au lieu de rester collé.
+  // Consigne nulle et voisin trop proche — un tank immobile, ou un mobile dont
+  // le style ne demande rien ce pas-ci. Il se décale au lieu de rester collé.
   if (length === 0) return { x: pushX / push, y: pushY / push };
 
   const x = heading.x / length + (pushX / push) * SPREAD_WEIGHT;
@@ -361,16 +361,6 @@ function desiredHeading(
 
     case 'hunt':
       return distance > profile.preferredRangeTiles ? (towards ?? roam()) : roam();
-
-    case 'seekLine':
-      // Tant qu'aucun angle n'est ouvert, se replacer ; dès qu'il y en a un,
-      // tenir la position et laisser la tourelle finir le travail. C'est le
-      // comportement de celui qui compte sur un tir direct : sans ricochet
-      // planifié, il n'a que la ligne de vue, et il doit aller la chercher.
-      if (ai.solutionAngle !== null) {
-        return distance < profile.preferredRangeTiles ? away : { x: 0, y: 0 };
-      }
-      return towards ?? roam();
 
     case 'flank': {
       // Ni de face ni à l'opposé : en biais. On vise un point décalé d'un

@@ -771,18 +771,102 @@ par les mêmes tests mécaniques. Seuls les **effectifs** (qui, combien, à quel
 palier) s'appuient sur la source ci-dessus — et seulement comme point de
 départ :
 
-| Palier | Effectif | Noir |
-|---|---|---|
-| 30 | blanc ×2, violet ×1, vert ×1 | — |
-| 40 | blanc ×3, violet ×2 | — |
-| 50 | noir ×1, blanc ×2, violet ×2 | première apparition |
-| 60 | noir ×2, blanc ×2, violet ×2 | |
-| 70 | noir ×3, blanc ×2, violet ×1 | |
-| 80 | noir ×3, blanc ×2, violet ×2 | |
-| 90 | noir ×4, blanc ×2, violet ×2 | |
-| 100 | noir ×5, blanc ×2, violet ×1 | l'effectif le plus lourd |
+| Palier | Tracé | Effectif | Source |
+|---|---|---|---|
+| 30 | propre au palier | blanc ×2, violet ×2, vert ×1 | capture |
+| 40 | écrit ici | blanc ×3, violet ×2 | à l'œil |
+| 50 | **celui de la mission 5** | noir ×2 | capture |
+| 60 | écrit ici | noir ×2, blanc ×2, violet ×2 | à l'œil |
+| 70 | écrit ici | noir ×3, blanc ×2, violet ×1 | à l'œil |
+| 80 | écrit ici | noir ×3, blanc ×2, violet ×2 | à l'œil |
+| 90 | **celui de la mission 4** | cendre ×8 | capture |
+| 100 | **celui de la mission 1** | noir ×4, brun ×2, blanc ×1, vert ×1 | capture |
 
-Ces chiffres ont été choisis pour rester cohérents entre eux (progression
-sans jamais redescendre) et compatibles avec les trois repères de la source
-— pas calculés à partir d'une formule qui, sur une seule source non
-recoupée, aurait relevé de la précision de façade.
+Quatre paliers ont depuis été relevés sur capture, et ils corrigent deux idées
+fausses de la première passe.
+
+**Un palier n'est pas forcément une arène neuve.** Le 50 rejoue le terrain de la
+mission 5, le 90 celui de la 4, le 100 celui de la 1 — seul l'effectif change.
+Le 30, lui, a bien son tracé propre. Les quatre paliers non relevés (40, 60, 70,
+80) gardent le tracé écrit pour cette refonte, faute de savoir lequel des vingt
+ils reprennent.
+
+**L'effectif ne mesure pas la difficulté.** Le palier 50 n'aligne que deux tanks
+noirs sur un terrain nu, là où le 40 en compte cinq. Un test vérifiait que
+l'effectif des paliers ne redescendait jamais ; c'était une règle inventée faute
+de données, et elle est tombée. Le commentaire laissé à sa place dans
+`tests/missions.test.ts` explique pourquoi il ne faut pas la réintroduire.
+
+Les effectifs encore marqués « à l'œil » restent choisis pour la cohérence de la
+progression, pas calculés — sur une source unique et non recoupée, une formule
+n'aurait relevé que de la précision de façade.
+
+## Le wiki du jeu original, et les six écarts qu'il a révélés
+
+Une fiche récapitulative du jeu original — vitesse, obus simultanés, rebonds,
+mines, type de projectile et mission d'apparition pour les dix tanks — a été
+confrontée ligne à ligne à `profiles.ts`.
+
+**Les dix lignes chiffrées correspondent, sans exception.** Le portage depuis
+l'ancienne version était juste sur tout ce qui est un nombre. Deux valeurs
+jusque-là marquées « écrites à l'estime » s'y trouvent également confirmées :
+trois tanks de réserve au départ et un tank offert toutes les cinq missions
+(`CAMPAIGN_RULES` dans `shared/campaign.ts`).
+
+Les écarts sont tous dans les **descriptions de comportement**, et ils se
+rangent en trois catégories.
+
+### Corrigés
+
+| Couleur | Ce que dit la fiche | Ce qu'on faisait |
+|---|---|---|
+| gris | *« their movement does not [seek the player] … neither offensive or defensive »* | `hunt` — il traquait |
+| sarcelle | *« defensive in their movement »*, mouvement qui ne cherche pas | `seekLine` — il allait chercher sa ligne de vue, puis se figeait |
+| noir | *« defensive and tend to run away whenever you fire at them »* | `hunt` — il chargeait |
+
+Le style `seekLine` a disparu avec ce changement : il n'existait que pour le
+sarcelle. Sa disparition règle au passage un troisième point de la fiche, *« the
+tanks that move never stop moving »* — c'était le seul style qui immobilisait un
+châssis mobile.
+
+Ajouté également : **les tanks mobiles poussent les tanks fixes**. La fiche en
+fait une tactique explicite (déplacer un vert le long d'un mur pour aller le
+miner de l'autre côté). `movement.ts` annulait jusque-là l'axe fautif dans tous
+les cas. La poussée ne se propage pas d'un tank à l'autre — voir le commentaire
+sur place pour le pourquoi.
+
+### Écarts assumés, demandés par l'auteur du projet
+
+Ces trois-là s'écartent de la fiche **délibérément**, sur des observations de
+jeu réelles. Ils sont documentés ici pour qu'on ne les « corrige » pas par
+inadvertance en relisant le wiki.
+
+- **Le brun vise au lieu de balayer au hasard.** La fiche dit *« turrets do not
+  actively seek the player, but only search randomly »*. Le balayage a été
+  implémenté puis retiré : il rendait le brun inoffensif au point d'être ennuyeux.
+- **Le sarcelle n'esquive pas.** La fiche lui prête *« avoid bullets and
+  mines »*. L'esquive a été retirée à toutes les couleurs jusqu'au rose, parce
+  que des adversaires faibles qui esquivent parfaitement se lisent comme un bug.
+- **Le violet et le blanc ne se piègent plus avec leurs propres mines.** La
+  fiche en fait leur **faiblesse principale** (*« Their biggest weakness is
+  mines. They tend to lay mines for no reason, therefore trapping themselves »*)
+  et la stratégie recommandée contre eux. `canLeaveMineBehind` et
+  `canReachSafety` la suppriment. Conséquence à garder en tête : **nos violets
+  et nos blancs sont plus durs que ceux de l'original.**
+
+### Écarts connus, non traités
+
+- Le **jaune** est en `erratic`, qui se dirige vers la cible une fois sur deux ;
+  la fiche dit que son mouvement ne cherche pas le joueur.
+- Le **vert** prend la meilleure solution de tir, ricochet ou pas ; la fiche dit
+  *« They will rarely fire directly at you, if ever »*.
+- L'esquive du **blanc** (0,6) est la deuxième du jeu, ce qui cadre mal avec son
+  intelligence annoncée *« Normal-Low »*. La valeur est mesurée, pas devinée :
+  l'aligner sur le violet le rendait deux fois plus facile à tuer à armement
+  identique.
+- Le **blanc** n'a pas ses indices sonores (*« a high or low sound »* selon qu'il
+  passe à l'offensive ou en défense) et ses chenilles ne sont pas plus marquées
+  que celles des autres.
+- **Le verrou des vingt premières missions** n'est pas implémenté : la campagne
+  enchaîne 1 → 100 d'un trait, là où l'original n'ouvre les cent qu'une fois la
+  vingtième franchie.

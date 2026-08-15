@@ -45,12 +45,6 @@ export type MovementStyle =
   /** Se rapproche jusqu'à portée utile. */
   | 'hunt'
   /**
-   * Se replace tant qu'aucun angle de tir n'est ouvert, tient sa position dès
-   * qu'il en a un. Le tank qui compte sur un tir direct plutôt que sur le
-   * ricochet doit chercher la ligne, pas la distance.
-   */
-  | 'seekLine'
-  /**
    * Se rapproche en biais plutôt que de face, et change de côté en chemin.
    * Prendre l'adversaire en tenaille suppose de ne pas arriver là où il
    * regarde.
@@ -231,7 +225,11 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     // presque intouchable, ce qui n'est plus « parfois ».
     evasionSkill: 0.25,
     plannedBounces: 1,
-    movement: 'hunt',
+    // « Their turrets mildly seek the player, but their movement does not. They
+    // are neither offensive or defensive in their movements. » Sa tourelle
+    // cherche, son châssis non : il patrouille, et c'est au joueur de croiser
+    // sa route.
+    movement: 'patrol',
     preferredRangeTiles: 5,
     invisible: false,
   },
@@ -260,7 +258,11 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     evasionSkill: 0,
     // Un missile ne rebondit pas : chercher un angle à rebonds n'aurait aucun sens.
     plannedBounces: 0,
-    movement: 'seekLine',
+    // « Their turrets strongly seek the player, but their movement does not.
+    // They are defensive in their movement. » Il tient sa distance et laisse la
+    // tourelle travailler — il ne va pas chercher sa ligne de vue, il attend
+    // qu'elle s'ouvre.
+    movement: 'keepAway',
     preferredRangeTiles: 6,
     invisible: false,
   },
@@ -429,8 +431,13 @@ export const TANK_PROFILES: Record<TankColor, TankProfile> = {
     // « Esquive activement » : pleine anticipation, la seule du jeu.
     evasionSkill: 1,
     plannedBounces: 0,
-    movement: 'hunt',
-    preferredRangeTiles: 3,
+    // « Black tanks are defensive and tend to run away whenever you fire at
+    // them. Black tanks can easily outrun your bullets, so you may have to
+    // charge in at them to finish them off. » C'est le seul adversaire qu'il
+    // faut aller chercher : il ne vient jamais à vous, et à 170 % de vitesse il
+    // reprend sa distance dès qu'on la réduit.
+    movement: 'keepAway',
+    preferredRangeTiles: 7,
     invisible: false,
   },
 
