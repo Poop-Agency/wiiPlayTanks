@@ -2,13 +2,31 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      `user-scalable=no` et `maximum-scale` : sans eux, viser au doigt déclenche
+      le zoom par pincement et le double-tap agrandit la page sous le jeu.
+      `viewport-fit=cover` étend la page sous l'encoche des téléphones récents.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>Tanks!</title>
     <link rel="stylesheet" href="/src/client/ui/style.css" />
   </head>
   <body>
     <div id="app">
       <canvas id="game"></canvas>
+    </div>
+    <!--
+      Statique, et non créé par le script : il doit s'afficher dès la première
+      image, avant même que le jeu ait démarré. On ne peut pas verrouiller
+      l'orientation sur Safari iOS — c'est donc une invitation, pas un blocage,
+      et le jeu reste jouable derrière.
+    -->
+    <div class="rotate-hint" aria-hidden="true">
+      <div class="rotate-hint__icon">⟳</div>
+      <p>Tourne ton téléphone à l'horizontale</p>
     </div>
     <script type="module" src="/src/client/main.ts"></script>
   </body>

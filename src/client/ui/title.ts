@@ -14,6 +14,7 @@
  */
 
 import { CAMPAIGN_LENGTH } from '@shared/campaign';
+import { hasTouchScreen } from '../input/touch';
 
 /**
  * Construction sans co-op, pour un hébergement statique.
@@ -157,15 +158,26 @@ function helpSection(): HTMLElement {
 
   const list = document.createElement('dl');
 
-  const entries: Array<[string, string]> = [
-    ['ZQSD · WASD · flèches', 'déplacer le tank'],
-    ['Souris', 'viser — la tourelle est indépendante du châssis'],
-    ['Clic gauche', 'tirer'],
-    ['Clic droit · E · Maj', 'poser une mine'],
-    ['Manette', 'stick gauche pour se déplacer, stick droit pour viser'],
-    ['M', 'couper le son'],
-    ['~', 'panneau de calibration'],
-  ];
+  // Au doigt, la liste des touches ne sert à rien : on affiche le schéma
+  // tactile à la place. Le partage clavier/manette reste, lui, pertinent des
+  // deux côtés — un téléphone peut recevoir une manette Bluetooth.
+  const entries: Array<[string, string]> = hasTouchScreen()
+    ? [
+        ['Stick à gauche', 'déplacer le tank'],
+        ['Doigt sur le plateau', 'viser — la tourelle est indépendante du châssis'],
+        ['Bouton Tirer', 'tirer, maintenir pour enchaîner'],
+        ['Bouton Mine', 'poser une mine'],
+        ['Écran à l’horizontale', 'le plateau est carré : en portrait il ne reste rien'],
+      ]
+    : [
+        ['ZQSD · WASD · flèches', 'déplacer le tank'],
+        ['Souris', 'viser — la tourelle est indépendante du châssis'],
+        ['Clic gauche', 'tirer'],
+        ['Clic droit · E · Maj', 'poser une mine'],
+        ['Manette', 'stick gauche pour se déplacer, stick droit pour viser'],
+        ['M', 'couper le son'],
+        ['~', 'panneau de calibration'],
+      ];
 
   for (const [keys, what] of entries) {
     const term = document.createElement('dt');

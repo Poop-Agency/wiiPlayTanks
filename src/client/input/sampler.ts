@@ -5,15 +5,16 @@
  * {@link InputCommand} — la seule chose que la simulation accepte, et la seule
  * chose qui partira sur le réseau en multijoueur (#13).
  *
- * C'est délibérément la seule couche qui connaisse le clavier, la souris et la
- * manette : la simulation, elle, ne sait pas d'où viennent les intentions
- * qu'elle applique.
+ * C'est délibérément la seule couche qui connaisse le clavier, la souris, la
+ * manette et l'écran tactile : la simulation, elle, ne sait pas d'où viennent
+ * les intentions qu'elle applique.
  */
 
 import type { InputCommand } from '@core/state';
 import { KEY_BINDINGS, MOUSE_BINDINGS } from './bindings';
 import type { GameAction } from './bindings';
 import { readGamepad } from './gamepad';
+import { NEUTRAL_TOUCH, TouchControls, hasTouchScreen } from './touch';
 
 /** Convertit une position de pointeur en coordonnées monde. */
 export type PointerToWorld = (clientX: number, clientY: number) => { x: number; y: number };
@@ -36,6 +37,14 @@ export class InputSampler {
   readonly #pointerToWorld: PointerToWorld;
   readonly #disposers: Array<() => void> = [];
 
+  /**
+   * Commandes à l'écran, sur les appareils pilotés au doigt uniquement.
+   *
+   * Créées ici et non dans `boot.ts` : elles sont une source d'entrée comme le
+   * clavier, et c'est ce module qui a la charge de toutes les connaître.
+   */
+  readonly #touch: TouchControls | null;
+
   /** Dernière position connue du pointeur, en coordonnées monde. */
   #aimX = 0;
   #aimY = 0;
@@ -47,6 +56,7 @@ export class InputSampler {
   constructor(target: HTMLElement, pointerToWorld: PointerToWorld) {
     this.#target = target;
     this.#pointerToWorld = pointerToWorld;
+    this.#touch = hasTouchScreen() ? new TouchControls(document.body) : null;
     this.#attach();
   }
 
@@ -79,17 +89,25 @@ export class InputSampler {
 
     // L'état d'une manette n'est pas évènementiel : il faut l'interroger.
     const pad = readGamepad();
+    const touch = this.#touch?.read() ?? NEUTRAL_TOUCH;
 
     // Fusion et non substitution : sinon brancher une manette désactiverait le
-    // clavier, et la débrancher figerait le tank sur sa dernière intention.
+    // clavier, et la débrancher figerait le tank sur sa dernière intention. Le
+    // stick à l'écran passe en dernier — il ne peut de toute façon coexister
+    // avec aucune des deux autres sources.
+    const padX = pad.moveX !== 0 ? pad.moveX : touch.moveX;
+    const padY = pad.moveY !== 0 ? pad.moveY : touch.moveY;
+
     const command: InputCommand = {
-      moveX: keyboardX !== 0 ? keyboardX : pad.moveX,
-      moveY: keyboardY !== 0 ? keyboardY : pad.moveY,
+      moveX: keyboardX !== 0 ? keyboardX : padX,
+      moveY: keyboardY !== 0 ? keyboardY : padY,
       // Le stick droit prend la main quand il est sorti de sa zone morte ; au
       // repos, la souris reprend, exactement comme le pointeur de la Wiimote.
+      // Au doigt, c'est le dernier point touché sur le plateau qui tient ce
+      // rôle — même champ, même chemin.
       aim: pad.aim ?? Math.atan2(this.#aimY - this.#originY, this.#aimX - this.#originX),
-      fire: held('fire') || pad.fire,
-      mine: held('mine') || pad.mine,
+      fire: held('fire') || pad.fire || touch.fire,
+      mine: held('mine') || pad.mine || touch.mine,
     };
 
     this.#pressedSinceSample.clear();
@@ -101,6 +119,7 @@ export class InputSampler {
     this.#disposers.length = 0;
     this.#active.clear();
     this.#pressedSinceSample.clear();
+    this.#touch?.dispose();
   }
 
   /* ── Câblage ─────────────────────────────────────────────────────────── */
@@ -123,15 +142,28 @@ export class InputSampler {
     // filer indéfiniment : on relâche tout.
     this.#listen(window, 'blur', () => this.#active.clear());
 
-    this.#listen(this.#target, 'pointermove', (event) => {
+    const aimAt = (event: Event): void => {
       const { clientX, clientY } = event as PointerEvent;
       const world = this.#pointerToWorld(clientX, clientY);
       this.#aimX = world.x;
       this.#aimY = world.y;
-    });
+    };
+
+    this.#listen(this.#target, 'pointermove', aimAt);
 
     this.#listen(this.#target, 'pointerdown', (event) => {
-      const action = MOUSE_BINDINGS[(event as PointerEvent).button];
+      const pointer = event as PointerEvent;
+
+      // Au doigt, `pointermove` ne se déclenche qu'une fois le contact établi :
+      // sans cette ligne, le canon ne bougerait qu'au deuxième geste.
+      aimAt(pointer);
+
+      // Et toucher le plateau ne fait que viser. `button` vaut toujours 0 au
+      // doigt : sans ce filtre, chaque correction de visée partirait en coup, et
+      // le bouton de tir ne servirait à rien.
+      if (pointer.pointerType === 'touch') return;
+
+      const action = MOUSE_BINDINGS[pointer.button];
       if (action) this.#press(action);
     });
 

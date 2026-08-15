@@ -20,6 +20,12 @@ body {
   background: #14100c;
   color: var(--ink);
   font-family: system-ui, sans-serif;
+
+  /* Sur mobile, tout geste sur la page est une commande de jeu : ni défilement
+   * élastique, ni sélection de texte au maintien du doigt. */
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #app {
@@ -30,9 +36,144 @@ body {
 canvas {
   display: block;
   max-width: 100vw;
+  /* `dvh` et non `vh` : sur mobile, `vh` fige la hauteur barre d'adresse
+   * déployée, et le bas du plateau passe sous l'écran quand elle se rétracte.
+   * `vh` reste en repli pour les navigateurs qui ignorent `dvh`. */
   max-height: 100vh;
+  max-height: 100dvh;
   /* Rendu net : le jeu est dessiné en pixels logiques, sans lissage parasite. */
   image-rendering: pixelated;
+  /* Le doigt vise : il ne fait pas défiler la page ni zoomer. */
+  touch-action: none;
+}
+
+/* ─── Commandes tactiles ──────────────────────────────────────────────────
+ *
+ * Créées par `input/touch.ts`, et seulement sur les appareils dont le pointeur
+ * principal est le doigt. En paysage sur un téléphone, le plateau est carré et
+ * centré : les commandes tombent donc dans les bandes latérales et ne masquent
+ * aucune tuile.
+ */
+
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  /* Le conteneur laisse passer les gestes : seuls le stick et les boutons les
+   * captent, pour que viser reste possible sur toute la surface du plateau. */
+  pointer-events: none;
+  /* Sous l'encoche et la barre de gestes. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.touch-stick {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(45vw, 240px);
+  height: min(60vh, 240px);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Positionné au point de contact par le script : le stick est flottant. */
+.touch-stick__base {
+  position: absolute;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border: 2px solid rgba(216, 201, 168, 0.25);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.touch-stick__base.is-held {
+  opacity: 1;
+}
+
+.touch-stick__knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  background: rgba(216, 201, 168, 0.35);
+  border-radius: 50%;
+}
+
+.touch-buttons {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.touch-button {
+  pointer-events: auto;
+  touch-action: none;
+
+  border: 2px solid rgba(216, 201, 168, 0.3);
+  border-radius: 50%;
+  background: rgba(43, 33, 24, 0.55);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.touch-button.is-held {
+  background: rgba(216, 201, 168, 0.35);
+}
+
+.touch-button--fire {
+  width: 92px;
+  height: 92px;
+  font-size: 15px;
+}
+
+.touch-button--mine {
+  width: 68px;
+  height: 68px;
+}
+
+/* ─── Invitation à passer en paysage ──────────────────────────────────────
+ *
+ * Le plateau est carré : en portrait sur un téléphone, il occupe toute la
+ * largeur et il ne reste rien pour les commandes.
+ */
+
+.rotate-hint {
+  display: none;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+
+    display: grid;
+    place-content: center;
+    gap: 18px;
+    padding: 24px;
+
+    background: #14100c;
+    text-align: center;
+  }
+
+  .rotate-hint__icon {
+    font-size: 64px;
+    line-height: 1;
+  }
+
+  .rotate-hint p {
+    margin: 0;
+    font-size: 18px;
+  }
 }
 
 /* ─── Panneau de calibration (touche ~) ───────────────────────────────────
@@ -287,6 +428,20 @@ body.panneau-ouvert {
 
 .ecran-titre button.principal:hover {
   background: #5b9ee2;
+}
+
+/* Au doigt, une cible de 8 px de marge se rate. On élargit boutons et champs,
+ * sans toucher au reste : l'écran-titre est déjà en colonne unique. */
+@media (pointer: coarse) {
+  .ecran-titre button,
+  .ecran-titre input {
+    padding: 14px 20px;
+    font-size: 16px;
+  }
+
+  .ecran-titre input[type='number'] {
+    width: 92px;
+  }
 }
 
 /* Deux colonnes : la touche à gauche, ce qu'elle fait à droite. */
