@@ -9,9 +9,13 @@ import '../src/client/debug-bridge';
  * Commandes tactiles.
  *
  * Rien ne remplace un vrai téléphone pour juger de l'ergonomie, mais la chaîne
- * — geste, échantillonnage, simulation — se vérifie ici. Le point le plus
- * fragile est la séparation entre viser et tirer : au doigt, `button` vaut
- * toujours zéro, et sans filtre chaque correction de visée partirait en coup.
+ * — geste, échantillonnage, simulation — se vérifie ici.
+ *
+ * Deux points fragiles, et ce sont eux que ces tests gardent : le plateau ne
+ * doit répondre à aucun contact du doigt (au doigt, `button` vaut toujours
+ * zéro, donc sans filtre chaque effleurement partirait en coup), et la visée
+ * doit **rester** après relâchement — c'est ce qui permet de pointer puis de
+ * tirer avec le même pouce.
  */
 
 /**
@@ -28,12 +32,12 @@ test.use({
 
 type Page = import('@playwright/test').Page;
 
-/** Position et compte d'obus du tank du joueur. */
+/** Position, orientation du canon et compte d'obus du tank du joueur. */
 async function state(page: Page) {
   return page.evaluate(() => {
     const world = window.__tanks!.world;
     const tank = world.tanks[0]!;
-    return { x: tank.x, y: tank.y, shells: world.shells.length };
+    return { x: tank.x, y: tank.y, turret: tank.turretAngle, shells: world.shells.length };
   });
 }
 
@@ -106,12 +110,13 @@ test('les commandes tactiles apparaissent sur un écran au doigt', async ({ page
   await page.goto('/?bac=1&calme=1');
   await waitForGame(page);
 
-  await expect(page.locator('.touch-stick')).toBeAttached();
+  await expect(page.locator('.touch-stick--move')).toBeAttached();
+  await expect(page.locator('.touch-stick--aim')).toBeAttached();
   await expect(page.locator('.touch-button--fire')).toBeVisible();
   await expect(page.locator('.touch-button--mine')).toBeVisible();
 });
 
-test('le stick virtuel déplace le tank', async ({ page }) => {
+test('le stick gauche déplace le tank', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
   await waitForGame(page);
 
@@ -119,23 +124,42 @@ test('le stick virtuel déplace le tank', async ({ page }) => {
 
   // Pouce posé au milieu de la zone, puis poussé vers le haut bien au-delà du
   // rayon de saturation : la consigne doit être plein nord.
-  await touchDrag(page, '.touch-stick', { x: 100, y: 140 }, { x: 100, y: 20 }, 700);
+  await touchDrag(page, '.touch-stick--move', { x: 100, y: 140 }, { x: 100, y: 20 }, 700);
 
   const after = await state(page);
   expect(after.y).toBeLessThan(before.y - 1);
 });
 
-test('toucher le plateau vise sans tirer', async ({ page }) => {
+test('le stick droit oriente le canon, et la visée reste après relâchement', async ({ page }) => {
+  await page.goto('/?bac=1&calme=1');
+  await waitForGame(page);
+
+  // Poussé plein sud : dans le repère du monde, l'axe Y descend, donc l'angle
+  // attendu est +π/2.
+  await touchDrag(page, '.touch-stick--aim', { x: 100, y: 60 }, { x: 100, y: 160 }, 250);
+
+  const aimed = await state(page);
+  expect(Math.sin(aimed.turret)).toBeCloseTo(1, 2);
+
+  // Le pouce est relâché depuis la fin du glissement : le canon ne doit pas
+  // s'être recentré entre-temps.
+  await page.waitForTimeout(400);
+  expect((await state(page)).turret).toBeCloseTo(aimed.turret, 6);
+});
+
+test('toucher le plateau ne fait rien', async ({ page }) => {
   await page.goto('/?bac=1&calme=1');
   await waitForGame(page);
 
   const before = await state(page);
   expect(before.shells).toBe(0);
 
-  // Un geste de visée franc, maintenu : au doigt il ne doit produire aucun obus.
+  // Un geste franc et maintenu sur le plateau : ni obus, ni canon qui pivote.
   await touchDrag(page, '#game', { x: 60, y: 60 }, { x: 260, y: 200 }, 500);
 
-  expect((await state(page)).shells).toBe(0);
+  const after = await state(page);
+  expect(after.shells).toBe(0);
+  expect(after.turret).toBeCloseTo(before.turret, 6);
 });
 
 test('le bouton de tir tire', async ({ page }) => {

@@ -1,17 +1,33 @@
 /**
  * Commandes tactiles.
  *
- * Le schéma reprend celui du jeu original de la même façon que le clavier-souris
- * (voir `bindings.ts`) : le pouce gauche tient le rôle du stick du nunchuk, le
- * doigt droit celui du pointeur de la Wiimote. Poser le doigt sur le plateau
- * oriente le canon ; le tir et la mine ont leurs propres boutons.
+ * Deux sticks : le gauche déplace le châssis, le droit oriente le canon. Le
+ * jeu est un twin-stick par nature — dans l'original, le stick du nunchuk et le
+ * pointeur de la Wiimote sont indépendants — et c'est la transposition qui
+ * demande le moins d'apprentissage au doigt.
+ *
+ * ─── Pourquoi pas viser en touchant le plateau ───────────────────────────────
+ *
+ * C'était la première version, et elle reprenait le pointeur de la Wiimote au
+ * plus près. Deux défauts en jeu : le doigt masque la zone qu'on regarde, et
+ * surtout l'angle se calcule depuis le tank, donc plus le doigt en est proche
+ * plus le canon devient nerveux — jusqu'à devenir incontrôlable au contact.
+ * Le stick, lui, a un pivot fixe : la précision ne dépend plus de l'endroit où
+ * l'on touche.
+ *
+ * ─── La visée est rémanente ──────────────────────────────────────────────────
+ *
+ * Relâcher le stick de visée **ne recentre pas le canon**. C'est ce qui rend
+ * l'ensemble jouable à deux pouces : on pointe, on lâche, on tire — sans quoi
+ * il faudrait tenir la visée et atteindre le bouton de tir en même temps, ce
+ * qui demande une troisième main.
  *
  * ─── Pourquoi ce module ressemble à `gamepad.ts` ─────────────────────────────
  *
- * Il rend délibérément la même forme de lecture qu'une manette — deux axes et
- * deux boutons. `InputSampler` fusionne déjà cette forme avec le clavier sans
- * savoir d'où elle vient : brancher le tactile ne demande donc pas de toucher à
- * la fusion, ni évidemment à la simulation.
+ * Il rend délibérément la même forme de lecture qu'une manette — deux axes, un
+ * angle, deux boutons. `InputSampler` fusionne déjà cette forme avec le clavier
+ * sans savoir d'où elle vient : brancher le tactile ne demande donc pas de
+ * toucher à la fusion, ni évidemment à la simulation.
  *
  * La différence est que l'état d'une manette s'interroge, là où le tactile est
  * évènementiel : d'où une instance à créer et à détruire, plutôt qu'une
@@ -23,14 +39,28 @@ export interface TouchReading {
   /** −1 à 1. Zéro au repos. */
   moveX: number;
   moveY: number;
+  /**
+   * Orientation du canon en radians, ou `null` s'il n'y a pas d'écran tactile.
+   *
+   * Jamais `null` dès lors que les commandes existent : le canon a toujours une
+   * direction, et la rendre facultative ferait reprendre la main à la souris —
+   * qui, sur un téléphone, n'a jamais bougé et pointe donc le coin de l'écran.
+   */
+  aim: number | null;
   fire: boolean;
   mine: boolean;
 }
 
-export const NEUTRAL_TOUCH: TouchReading = { moveX: 0, moveY: 0, fire: false, mine: false };
+export const NEUTRAL_TOUCH: TouchReading = {
+  moveX: 0,
+  moveY: 0,
+  aim: null,
+  fire: false,
+  mine: false,
+};
 
 /**
- * Rayon du stick virtuel, en pixels CSS.
+ * Rayon d'un stick virtuel, en pixels CSS.
  *
  * C'est la distance à laquelle la consigne sature. Trop court, le tank part à
  * pleine vitesse au moindre frémissement ; trop long, le pouce doit quitter sa
@@ -39,13 +69,22 @@ export const NEUTRAL_TOUCH: TouchReading = { moveX: 0, moveY: 0, fire: false, mi
 const STICK_RADIUS_PX = 56;
 
 /**
- * Zone morte du stick, en pixels CSS.
+ * Zone morte du stick de déplacement, en pixels CSS.
  *
  * Un pouce posé n'est jamais parfaitement immobile. Sans ce seuil, le tank
  * dériverait en permanence, ce qui est particulièrement gênant ici : les tanks
  * qui se déplacent ne peuvent pas viser aussi précisément que ceux à l'arrêt.
  */
-const STICK_DEADZONE_PX = 8;
+const MOVE_DEADZONE_PX = 8;
+
+/**
+ * Zone morte du stick de visée, en pixels CSS.
+ *
+ * Plus large que celle du déplacement, parce que la visée est rémanente : un
+ * frémissement au moment de poser le pouce ferait pivoter le canon pour de bon,
+ * là où un frémissement sur le déplacement se corrige tout seul au pas suivant.
+ */
+const AIM_DEADZONE_PX = 14;
 
 /**
  * L'appareil est-il piloté au doigt ?
@@ -59,26 +98,29 @@ export function hasTouchScreen(): boolean {
   return window.matchMedia('(pointer: coarse)').matches;
 }
 
+/** Les trois éléments qui composent un stick à l'écran. */
+interface StickParts {
+  zone: HTMLElement;
+  base: HTMLElement;
+  knob: HTMLElement;
+}
+
 export class TouchControls {
   readonly #root: HTMLElement;
-  readonly #base: HTMLElement;
-  readonly #knob: HTMLElement;
   readonly #disposers: Array<() => void> = [];
-
-  /**
-   * Identifiant du doigt qui tient le stick, `null` si aucun.
-   *
-   * Indispensable en multitouch : sans lui, le doigt qui appuie sur « tirer »
-   * déplacerait aussi le stick, les deux évènements arrivant sur la même page.
-   */
-  #stickPointer: number | null = null;
-
-  /** Point où le pouce s'est posé — le stick est flottant, pas fixe. */
-  #originX = 0;
-  #originY = 0;
 
   #moveX = 0;
   #moveY = 0;
+
+  /**
+   * Orientation du canon, en radians. Vers la droite au démarrage.
+   *
+   * Une valeur de départ arbitraire mais **définie** : le canon doit pointer
+   * quelque part avant le premier geste, et n'importe quelle direction franche
+   * vaut mieux qu'un angle hérité d'une position de souris qui n'existe pas.
+   */
+  #aim = 0;
+
   #fire = false;
   #mine = false;
 
@@ -86,17 +128,8 @@ export class TouchControls {
     this.#root = document.createElement('div');
     this.#root.className = 'touch-controls';
 
-    const stick = document.createElement('div');
-    stick.className = 'touch-stick';
-
-    this.#base = document.createElement('div');
-    this.#base.className = 'touch-stick__base';
-
-    this.#knob = document.createElement('div');
-    this.#knob.className = 'touch-stick__knob';
-
-    this.#base.append(this.#knob);
-    stick.append(this.#base);
+    const move = this.#stick('touch-stick--move');
+    const aim = this.#stick('touch-stick--aim');
 
     const buttons = document.createElement('div');
     buttons.className = 'touch-buttons';
@@ -105,10 +138,21 @@ export class TouchControls {
     const mine = this.#button('touch-button--mine', 'Mine');
     buttons.append(mine, fire);
 
-    this.#root.append(stick, buttons);
+    this.#root.append(move.zone, aim.zone, buttons);
     host.append(this.#root);
 
-    this.#wireStick(stick);
+    this.#wireStick(move, MOVE_DEADZONE_PX, (x, y) => {
+      this.#moveX = x;
+      this.#moveY = y;
+    });
+
+    // Rémanence : on n'enregistre l'angle que lorsque le pouce sort de la zone
+    // morte, donc ni au repos ni au relâchement. Le canon garde alors sa
+    // dernière direction, ce qui est tout l'intérêt.
+    this.#wireStick(aim, AIM_DEADZONE_PX, (x, y) => {
+      if (x !== 0 || y !== 0) this.#aim = Math.atan2(y, x);
+    });
+
     this.#wireButton(fire, (held) => {
       this.#fire = held;
     });
@@ -118,7 +162,13 @@ export class TouchControls {
   }
 
   read(): TouchReading {
-    return { moveX: this.#moveX, moveY: this.#moveY, fire: this.#fire, mine: this.#mine };
+    return {
+      moveX: this.#moveX,
+      moveY: this.#moveY,
+      aim: this.#aim,
+      fire: this.#fire,
+      mine: this.#mine,
+    };
   }
 
   dispose(): void {
@@ -127,7 +177,23 @@ export class TouchControls {
     this.#root.remove();
   }
 
-  /* ── Câblage ─────────────────────────────────────────────────────────── */
+  /* ── Construction ────────────────────────────────────────────────────── */
+
+  #stick(modifier: string): StickParts {
+    const zone = document.createElement('div');
+    zone.className = `touch-stick ${modifier}`;
+
+    const base = document.createElement('div');
+    base.className = 'touch-stick__base';
+
+    const knob = document.createElement('div');
+    knob.className = 'touch-stick__knob';
+
+    base.append(knob);
+    zone.append(base);
+
+    return { zone, base, knob };
+  }
 
   #button(modifier: string, label: string): HTMLButtonElement {
     const button = document.createElement('button');
@@ -137,22 +203,44 @@ export class TouchControls {
     return button;
   }
 
-  #wireStick(zone: HTMLElement): void {
+  /* ── Câblage ─────────────────────────────────────────────────────────── */
+
+  #wireStick(
+    { zone, base, knob }: StickParts,
+    deadzonePx: number,
+    apply: (x: number, y: number) => void,
+  ): void {
+    /**
+     * Doigt qui tient ce stick, `null` si aucun.
+     *
+     * Indispensable en multitouch, et c'est tout l'objet de cette refonte :
+     * les deux pouces et le bouton de tir produisent des évènements sur la même
+     * page, et chacun doit ne réagir qu'au sien.
+     */
+    let pointerId: number | null = null;
+    let originX = 0;
+    let originY = 0;
+
+    const set = (x: number, y: number): void => {
+      apply(x, y);
+      knob.style.transform = `translate(${x * STICK_RADIUS_PX}px, ${y * STICK_RADIUS_PX}px)`;
+    };
+
     this.#listen(zone, 'pointerdown', (event) => {
       const pointer = event as PointerEvent;
-      if (this.#stickPointer !== null) return;
+      if (pointerId !== null) return;
 
-      this.#stickPointer = pointer.pointerId;
-      this.#originX = pointer.clientX;
-      this.#originY = pointer.clientY;
+      pointerId = pointer.pointerId;
+      originX = pointer.clientX;
+      originY = pointer.clientY;
 
       // Le stick apparaît sous le pouce plutôt qu'à une place fixe : les mains
       // n'ont pas toutes la même taille, et on ne regarde pas ses doigts en
       // jouant.
       const bounds = zone.getBoundingClientRect();
-      this.#base.style.left = `${pointer.clientX - bounds.left}px`;
-      this.#base.style.top = `${pointer.clientY - bounds.top}px`;
-      this.#base.classList.add('is-held');
+      base.style.left = `${pointer.clientX - bounds.left}px`;
+      base.style.top = `${pointer.clientY - bounds.top}px`;
+      base.classList.add('is-held');
 
       event.preventDefault();
     });
@@ -163,30 +251,29 @@ export class TouchControls {
     // de pointeur qu'il ne connaît pas.
     this.#listen(window, 'pointermove', (event) => {
       const pointer = event as PointerEvent;
-      if (pointer.pointerId !== this.#stickPointer) return;
+      if (pointer.pointerId !== pointerId) return;
 
-      const dx = pointer.clientX - this.#originX;
-      const dy = pointer.clientY - this.#originY;
+      const dx = pointer.clientX - originX;
+      const dy = pointer.clientY - originY;
       const distance = Math.hypot(dx, dy);
 
-      if (distance < STICK_DEADZONE_PX) {
-        this.#setStick(0, 0);
+      if (distance < deadzonePx) {
+        set(0, 0);
         return;
       }
 
       // Saturation au rayon : au-delà, pousser plus loin ne change rien, mais
       // le pouce peut continuer de tourner sans perdre la direction.
       const scale = Math.min(distance, STICK_RADIUS_PX) / distance;
-      this.#setStick((dx * scale) / STICK_RADIUS_PX, (dy * scale) / STICK_RADIUS_PX);
+      set((dx * scale) / STICK_RADIUS_PX, (dy * scale) / STICK_RADIUS_PX);
     });
 
     const release = (event: Event): void => {
-      const pointer = event as PointerEvent;
-      if (pointer.pointerId !== this.#stickPointer) return;
+      if ((event as PointerEvent).pointerId !== pointerId) return;
 
-      this.#stickPointer = null;
-      this.#setStick(0, 0);
-      this.#base.classList.remove('is-held');
+      pointerId = null;
+      set(0, 0);
+      base.classList.remove('is-held');
     };
 
     this.#listen(window, 'pointerup', release);
@@ -219,12 +306,6 @@ export class TouchControls {
 
     this.#listen(window, 'pointerup', release);
     this.#listen(window, 'pointercancel', release);
-  }
-
-  #setStick(x: number, y: number): void {
-    this.#moveX = x;
-    this.#moveY = y;
-    this.#knob.style.transform = `translate(${x * STICK_RADIUS_PX}px, ${y * STICK_RADIUS_PX}px)`;
   }
 
   #listen(target: EventTarget, type: string, handler: (event: Event) => void): void {

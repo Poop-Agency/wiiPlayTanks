@@ -67,14 +67,23 @@ canvas {
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+/* Deux zones de pouce, une par bord. En paysage sur un téléphone, le plateau
+ * est carré et centré : elles tombent dans les bandes latérales. */
 .touch-stick {
   position: absolute;
-  left: 0;
   bottom: 0;
-  width: min(45vw, 240px);
-  height: min(60vh, 240px);
+  width: min(38vw, 200px);
+  height: min(58vh, 190px);
   pointer-events: auto;
   touch-action: none;
+}
+
+.touch-stick--move {
+  left: 0;
+}
+
+.touch-stick--aim {
+  right: 0;
 }
 
 /* Positionné au point de contact par le script : le stick est flottant. */
@@ -104,13 +113,21 @@ canvas {
   border-radius: 50%;
 }
 
+/* Le stick de visée porte une marque : sa direction reste après relâchement, et
+ * il faut pouvoir distinguer les deux d'un coup d'œil. */
+.touch-stick--aim .touch-stick__knob {
+  background: rgba(232, 201, 138, 0.4);
+}
+
+/* Juste au-dessus de la zone de visée, donc à portée du même pouce : on pointe,
+ * on lâche — le canon garde sa direction — puis on tire. */
 .touch-buttons {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: 12px;
+  bottom: min(58vh, 190px);
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 12px;
 }
 
 .touch-button {
@@ -130,14 +147,14 @@ canvas {
 }
 
 .touch-button--fire {
-  width: 92px;
-  height: 92px;
+  width: 84px;
+  height: 84px;
   font-size: 15px;
 }
 
 .touch-button--mine {
-  width: 68px;
-  height: 68px;
+  width: 62px;
+  height: 62px;
 }
 
 /* ─── Invitation à passer en paysage ──────────────────────────────────────

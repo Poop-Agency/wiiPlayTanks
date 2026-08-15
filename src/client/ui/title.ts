@@ -164,7 +164,7 @@ function helpSection(): HTMLElement {
   const entries: Array<[string, string]> = hasTouchScreen()
     ? [
         ['Stick à gauche', 'déplacer le tank'],
-        ['Doigt sur le plateau', 'viser — la tourelle est indépendante du châssis'],
+        ['Stick à droite', 'orienter le canon — il garde sa direction quand on lâche'],
         ['Bouton Tirer', 'tirer, maintenir pour enchaîner'],
         ['Bouton Mine', 'poser une mine'],
         ['Écran à l’horizontale', 'le plateau est carré : en portrait il ne reste rien'],

@@ -103,9 +103,13 @@ export class InputSampler {
       moveY: keyboardY !== 0 ? keyboardY : padY,
       // Le stick droit prend la main quand il est sorti de sa zone morte ; au
       // repos, la souris reprend, exactement comme le pointeur de la Wiimote.
-      // Au doigt, c'est le dernier point touché sur le plateau qui tient ce
-      // rôle — même champ, même chemin.
-      aim: pad.aim ?? Math.atan2(this.#aimY - this.#originY, this.#aimX - this.#originX),
+      // Le stick de visée à l'écran s'intercale entre les deux : il garde sa
+      // dernière direction, donc il ne rend jamais la main à une souris qui,
+      // sur un téléphone, n'a jamais bougé.
+      aim:
+        pad.aim ??
+        touch.aim ??
+        Math.atan2(this.#aimY - this.#originY, this.#aimX - this.#originX),
       fire: held('fire') || pad.fire || touch.fire,
       mine: held('mine') || pad.mine || touch.mine,
     };
@@ -149,21 +153,27 @@ export class InputSampler {
       this.#aimY = world.y;
     };
 
-    this.#listen(this.#target, 'pointermove', aimAt);
+    /**
+     * Le plateau ne réagit qu'à la souris.
+     *
+     * Au doigt, tout passe par les commandes à l'écran : le stick de visée
+     * oriente le canon, les boutons tirent et minent. Laisser le plateau viser
+     * en plus donnerait deux sources concurrentes — un effleurement du pouce en
+     * bordure ferait pivoter le canon sans qu'on comprenne pourquoi. Et
+     * `button` vaut toujours zéro au doigt, donc sans ce filtre chaque contact
+     * partirait aussi en coup de canon.
+     */
+    const fromMouse = (event: Event): boolean => (event as PointerEvent).pointerType !== 'touch';
+
+    this.#listen(this.#target, 'pointermove', (event) => {
+      if (fromMouse(event)) aimAt(event);
+    });
 
     this.#listen(this.#target, 'pointerdown', (event) => {
-      const pointer = event as PointerEvent;
+      if (!fromMouse(event)) return;
 
-      // Au doigt, `pointermove` ne se déclenche qu'une fois le contact établi :
-      // sans cette ligne, le canon ne bougerait qu'au deuxième geste.
-      aimAt(pointer);
-
-      // Et toucher le plateau ne fait que viser. `button` vaut toujours 0 au
-      // doigt : sans ce filtre, chaque correction de visée partirait en coup, et
-      // le bouton de tir ne servirait à rien.
-      if (pointer.pointerType === 'touch') return;
-
-      const action = MOUSE_BINDINGS[pointer.button];
+      aimAt(event);
+      const action = MOUSE_BINDINGS[(event as PointerEvent).button];
       if (action) this.#press(action);
     });
 
