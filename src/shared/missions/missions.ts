@@ -112,10 +112,14 @@ const CAMPAIGN_TOTAL_MISSIONS = 100;
  * sécurité au départ. L'original place parfois un adversaire tout près du
  * joueur, et c'est un choix de game design, pas un défaut à corriger.
  *
- * Les tracés restants (1, 2 et 10 à 20) attendent leurs captures ; la liste
- * grandit à mesure qu'on les relève.
+ * Les tracés 1 et 2 attendent encore leurs captures ; la liste grandit à
+ * mesure qu'on les relève.
  */
-export const TRANSCRIBED_MISSION_IDS: ReadonlySet<number> = new Set([3, 4, 5, 6, 7, 8, 9]);
+export const TRANSCRIBED_MISSION_IDS: ReadonlySet<number> = new Set([
+  3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+  // Paliers relevés eux aussi sur capture.
+  50, 90, 100,
+]);
 
 /** Les vingt missions d'origine, tracés uniques écrits à la main. */
 const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
@@ -135,9 +139,9 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
 #....#...#.......#
 #....#...#.......#
 #........X.......#
-#.1..#...X.....b.#
+#.1......X.....b.#
 #....#...#.......#
-#........#.......#
+#....#...#.......#
 #................#
 #................#
 #................#
@@ -366,28 +370,36 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 9,
     name: 'Le mur du milieu',
-    // Relevé sur capture du vrai jeu : une colonne de liège coupe l'arène
-    // dans toute sa hauteur, coiffée en haut et en bas d'un bloc plein, avec
-    // un décrochement d'une tuile vers la droite à mi-parcours. Le seul
-    // passage à pied est en bas ; partout ailleurs il faut percer le liège.
-    // De part et d'autre, deux petits massifs pleins à gauche et un escalier
-    // à droite. Six adversaires, quatre cendre et deux jaunes.
+    // Tracé à la main par l'auteur du projet, capture sous les yeux, après
+    // trois transcriptions ratées.
+    //
+    // Une colonne de liège en **S** occupe le centre : deux blocs pleins
+    // côte à côte en chapeau, quatre liège dans la colonne de gauche, une
+    // rangée où les deux colonnes sont occupées — c'est la marche —, quatre
+    // liège dans celle de droite, et deux pleins côte à côte en socle.
+    //
+    // De part et d'autre, une **rangée horizontale** de quatre blocs pleins
+    // partant du mur, à mi-hauteur. Elles ne montent pas en escalier : c'est
+    // la hauteur variable du rendu 3D qui le laisse croire.
+    //
+    // Le liège se perce mais ne se contourne qu'en haut ou en bas. Six
+    // adversaires — quatre cendre, deux jaunes.
     grid: `
 ##################
-#.......#........#
-#.....a.X........#
+#................#
+#.....a..........#
+#..y....##.......#
+#.......X.....a..#
 #.......X........#
-#..y....X.....a..#
-#..##...X........#
 #.......X...a....#
-#..#....XX.###...#
-#..##....X...##..#
+#.......X........#
+#####...XX...#####
 #........X.......#
 #........X.......#
 #........X.......#
 #........X.......#
-#.......##.......#
-#..1..........y..#
+#..1....##.......#
+#.............y..#
 #................#
 #...........a....#
 ##################
@@ -396,26 +408,42 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 10,
     name: 'Les gradins',
-    // Relevé sur capture du vrai jeu : quatre rangées de trois barres
-    // alignées, alternativement pleines et cassables, avec des couloirs
-    // francs entre elles. Deux roses seulement, mais ils tirent au ricochet
-    // dans un terrain fait de lignes droites.
+    // Tracé à la main par l'auteur du projet, capture sous les yeux.
+    //
+    // Huit barres horizontales en quinconce, sur un rythme régulier de trois
+    // rangées : latérales aux rangées 3, 8 et 14, centrales aux rangées 5 et
+    // 11, intercalées entre les précédentes.
+    //
+    // Trois détails qu'aucune mesure au pixel ne donne, et qui distinguent ce
+    // tracé du précédent :
+    //
+    //   · **aucune barre ne touche un mur** — une tuile de dégagement partout,
+    //     contrairement à la mission 9 ;
+    //   · **les longueurs varient** — trois blocs en haut et en bas, quatre au
+    //     milieu ;
+    //   · **le liège n'est pas réparti par moitiés** — les deux barres
+    //     latérales du milieu sont intégralement cassables, tandis que chaque
+    //     barre centrale ne porte qu'**un seul** bloc de liège, et pas à  
+    //     même colonne de l'une à l'autre.
+    //
+    // Deux roses seulement, mais le terrain n'est fait que de lignes droites —
+    // de quoi ricocher d'un bout à l'autre.
     grid: `
 ##################
 #................#
-#........r.......#
-#................#
-#...###..###.###.#
-#..............r.#
-#................#
-#...XXX..XXX.XXX.#
-#................#
-#..1###..###.###.#
+#.........r......#
+#.###........###.#
+#...............r#
+#......#X##......#
 #................#
 #................#
-#...XXX..XXX.XXX.#
+#.XXXX......XXXX.#
 #................#
 #................#
+#......##X#......#
+#................#
+#1...............#
+#.###........###.#
 #................#
 #................#
 ##################
@@ -424,47 +452,80 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 11,
     name: "L'enceinte",
+    // Tracé à la main par l'auteur du projet, capture sous les yeux.
+    //
+    // Deux longs murs coudés qui se font face en diagonale, chacun courant
+    // presque d'un bord à l'autre de l'arène :
+    //
+    //   · à gauche, une descente en colonne 5 depuis le mur du haut, un
+    //     décrochement d'une case vers la gauche à mi-hauteur, puis la suite
+    //     jusqu'en bas où elle part vers la droite en pied ;
+    //   · à droite, un pied horizontal en haut qui plonge en colonne 13,
+    //     décroche vers la gauche aux deux tiers, et descend en colonne 12
+    //     jusqu'au mur du bas.
+    //
+    // **Le liège marque les extrémités** — les deux bouts du mur de gauche,
+    // le bout du pied nord-est, le bas du mur de droite. C'est la règle de
+    // composition du tracé, et elle vaut mieux que de chercher les blocs roses
+    // un à un sur la capture.
+    //
+    // Six adversaires, deux de chaque couleur, un par secteur.
     grid: `
 ##################
-#................#
-#..t...........t.#
-#................#
-#..############..#
-#..#..........#..#
-#..#...r..r...#..#
-#..X..........X..#
-#..#....aa....#..#
-#..#..........#..#
-#..###..##..###..#
-#................#
-#................#
-#................#
-#................#
-#........1.......#
-#................#
+#....Xt..........#
+#....X......a....#
+#.1..#....##XX...#
+#....#.......X...#
+#....#.......#.r.#
+#....#.......#...#
+#...##.......#...#
+#...#........#...#
+#...#...r...##...#
+#...#.......#....#
+#...#.......#....#
+#...X.......#....#
+#...XX##....#....#
+#..a........#..t.#
+#...........X....#
+#...........X....#
 ##################
 `,
   },
   {
     id: 12,
     name: 'Angles morts',
+    // Relevé sur capture du vrai jeu, replacé sur un quadrillage tracé par
+    // l'auteur du projet par-dessus l'image — seize colonnes, seize rangées,
+    // pas régulier. C'est la méthode la plus fiable trouvée jusqu'ici : elle
+    // supprime d'un coup la perspective et le tâtonnement au pixel.
+    //
+    // Un escalier en diagonale traverse l'arène du coin bas-gauche au coin
+    // haut-droite, deux blocs par marche, une marche par rangée, avec deux
+    // marches de liège en son milieu.
+    //
+    // De part et d'autre, deux carrés de quatre trous — en haut à gauche et en
+    // bas à droite — qui coupent le passage aux tanks sans arrêter les obus.
+    //
+    // Deux verts et deux roses, un de chaque de part et d'autre de la
+    // diagonale : les verts tirent au ricochet par-dessus l'escalier, ce que
+    // leurs deux rebonds rendent redoutable sur un terrain tout en biais.
     grid: `
 ##################
 #................#
-#..g..........g..#
-#................#
-#..####...####...#
-#................#
-#................#
-#.....r....r.....#
-#................#
-#...###....###...#
-#................#
-#.....XX..XXX....#
-#................#
-#................#
-#................#
-#........1.......#
+#..........r.....#
+#............#...#
+#...HH......##.g.#
+#...HH.....##....#
+#.........##.....#
+#........X#......#
+#.1.....XX.......#
+#......#X........#
+#.....##.........#
+#....##..........#
+#...##......HH...#
+#...#.......HH...#
+#......r.........#
+#.............g..#
 #................#
 ##################
 `,
@@ -472,23 +533,37 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 13,
     name: 'Les obliques',
+    // Décrit rangée par rangée par l'auteur du projet, capture en main. Trois
+    // barres horizontales de dix blocs, colonnes 4 à 13, séparées de quatre
+    // rangées vides — barres aux rangées 3, 8 et 13.
+    //
+    // Les barres alternent bois et liège par paires, et celle du milieu est
+    // **en opposition de phase** avec les deux autres : là où celles du haut
+    // et du bas sont pleines, elle est cassable. C'est ce décalage qui donne
+    // son intérêt au tracé, sans quoi les trois barres offriraient les mêmes
+    // ouvertures.
+    //
+    // Le motif décrit totalise quinze rangées ; la seizième est laissée en
+    // marge basse.
+    //
+    // Trois jaunes et trois sarcelle, un couple par bande.
     grid: `
 ##################
-#..y.....y.....y.#
 #................#
-#..##............#
-#...##...........#
-#....##..........#
-#.....X..........#
-#.....##.........#
+#.......y......t.#
+#...##XX##XX##...#
 #................#
-#..t..t.....t....#
-#.........##.....#
-#..........XX....#
-#...........#....#
-#...........##...#
-#............##..#
-#........1.......#
+#................#
+#................#
+#................#
+#1..XX##XX##XX.t.#
+#................#
+#.........y......#
+#................#
+#................#
+#...##XX##XX##...#
+#................#
+#....y........t..#
 #................#
 ##################
 `,
@@ -496,23 +571,33 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 14,
     name: 'Le damier',
+    // Relevé sur capture du vrai jeu, charpente donnée par l'auteur du
+    // projet : trois rangées libres en haut et trois en bas, et **tout est
+    // d'équerre** — aucun biais, aucune diagonale.
+    //
+    // Deux lignes horizontales encadrent le tracé, l'une en rangée 4 et
+    // l'autre en 13, chacune mêlant les trois matières : bois plein, liège
+    // cassable et trou. Entre les deux, deux équerres de bois se font face,
+    // ouvertes l'une vers l'autre.
+    //
+    // Trois verts et trois roses, répartis dans les trois bandes.
     grid: `
 ##################
-#..g....g...g....#
 #................#
-#..#..##..##..##.#
-#..#..##..##..##.#
+#...........r..g.#
 #................#
-#...r.....r......#
-#..X..XX..XX..XX.#
-#..X..XX..XX..XX.#
-#..r.............#
-#..#..##..##..##.#
-#..#..##..##..##.#
+#...#####H#H#X#X##
+#...#............#
+#...#............#
+#...#............#
+#.r.#.g....###...#
+#...#........#...#
+#...###......#...#
+#..........g.#...#
+#............#.r.#
+##X#X#H#H#####...#
 #................#
-#................#
-#................#
-#........1.......#
+#.1..............#
 #................#
 ##################
 `,
@@ -520,23 +605,41 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 15,
     name: 'Les fosses',
+    // Décrit par l'auteur du projet. Quatre équerres de six sur quatre —
+    // jambe de six blocs, pied de quatre — notées par le caractère de coin
+    // qui dessine leur forme :
+    //
+    //     ┘ └        haut-gauche, haut-droite
+    //     ┐ ┌        bas-gauche, bas-droite
+    //
+    // **Les quatre pointes convergent vers le centre**, et ce sont elles qui
+    // portent le liège : la pointe et son voisin sur chaque bras, soit trois
+    // blocs cassables par équerre. Percer un coin ouvre les deux directions
+    // d'un coup.
+    //
+    // Les jambes courent d'un mur à la voie centrale, qui mesure quatre
+    // colonnes sur trois rangées.
+    //
+    // Six verts, l'effectif le plus fourni de la campagne en tireurs
+    // immobiles — et les quatre longues jambes leur laissent des couloirs
+    // droits d'un bout à l'autre du plateau.
     grid: `
 ##################
 #................#
-#...p.....p......#
-#................#
-#..HHHH.....HHH..#
-#..HHHH.....HHH..#
-#................#
-#.......##.......#
-#.......##.......#
-#.......XX..p....#
-#................#
-#..HHHH.....HHH..#
-#..HHHH.....HHH..#
+#..............p.#
+#..#X#X....#.....#
+#..#.......#.....#
+#..#.p.....#.....#
+#..#.......#X#X..#
 #................#
 #................#
-#........1.......#
+#................#
+#................#
+#..X#X#.......#..#
+#.....#.......#..#
+#.....#.......#..#
+#.1...#....X#X#..#
+#..............p.#
 #................#
 ##################
 `,
@@ -544,95 +647,162 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 16,
     name: 'Les casemates',
+    // Relevé sur capture du vrai jeu, cadrage donné par l'auteur du projet :
+    // trois rangées libres en haut, deux en bas.
+    //
+    // Le tracé décrit un grand **S** : une verticale contre le bord gauche,
+    // une barre horizontale haute, une verticale contre le bord droit, une
+    // barre horizontale basse. Les deux barres alternent bois et liège un bloc
+    // sur deux, en opposition de phase l'une par rapport à l'autre.
+    //
+    // Trois violets et deux verts. Les verts, immobiles, sont posés de part et
+    // d'autre du S : leurs ricochets à deux bandes passent par-dessus les
+    // barres que le joueur doit contourner.
     grid: `
 ##################
-#..g...........g.#
 #................#
-#..####.....####.#
-#.....#.....#....#
-#.....#.....#....#
-#....p......p....#
-#........p.......#
-#...XXX....XXX...#
+#.......p......g.#
 #................#
-#................#
-#.....#.....#....#
-#.....#.....#....#
-#..####.....####.#
-#................#
-#........1.......#
-#................#
+#..#...X#X#X#....#
+#..#........#....#
+#..#........#X#..#
+#..#..........#..#
+#..#.......p..#..#
+#..#..........#..#
+#..#..........#..#
+#..#..........#..#
+#..#..........#..#
+#..#X#.g......#..#
+#....#........#.p#
+#....#X#X#X...#..#
+#.1..............#
 ##################
 `,
   },
   {
     id: 17,
     name: 'Le peloton vert',
+    // Décrit par l'auteur du projet : quatre équerres, chacune tenant dans un
+    // rectangle de six sur quatre.
+    //
+    // Notation retenue pour l'orientation d'une équerre — le caractère dessine
+    // la forme, et il n'en existe que quatre :
+    //
+    //     ┌ bras vers le bas et la droite      ┐ bras vers le bas et la gauche
+    //     └ bras vers le haut et la droite     ┘ bras vers le haut et la gauche
+    //
+    // Ici, en lecture haut-gauche → bas-droite : `┘ └ ┐ ┌`. Les quatre pointes
+    // convergent donc vers le centre, et c'est le **long bras qui alterne** :
+    // vertical jusqu'à la bordure haute pour l'équerre haut-gauche, horizontal
+    // jusqu'à la bordure droite pour celle du haut-droite, et l'inverse en bas.
+    // Le tracé a une symétrie de **rotation** d'un demi-tour, pas de miroir —
+    // c'est ce que j'avais manqué aux deux premières tentatives.
+    //
+    // Les décalages qui en résultent ouvrent une voie centrale de quatre
+    // colonnes sur trois rangées.
+    //
+    // **Le coin et ses deux voisins immédiats sont cassables**, un sur chaque
+    // bras. C'est la seule brèche de chaque équerre, et elle est exactement à
+    // l'angle : la percer à la mine ouvre les deux directions d'un coup.
+    //
+    // Six verts, l'effectif le plus fourni de la campagne en tireurs
+    // immobiles. Le tracé leur va bien : les quatre jambes verticales laissent
+    // de longs couloirs droits, et leurs deux rebonds portent d'un bout à
+    // l'autre.
     grid: `
 ##################
-#..g...g....g....#
+#.....#..........#
+#..g..#..........#
+#.....#..........#
+#.....#....#.....#
+#.....X....#...g.#
+#.....X....X.....#
+#...#XX....XX#####
 #................#
-#.##.##.##.##.##.#
-#................#
-#..g...g....g....#
-#................#
-#.##.##.##.##.##.#
-#................#
-#.XX.XX.XX.XX.XX.#
-#................#
-#................#
-#.##.##.##.##.##.#
-#................#
-#................#
-#........1.......#
-#................#
+#.g..............#
+#.......g......g.#
+#####XX....XX#...#
+#.....X....X.....#
+#.....#....#.....#
+#.1...#....#.....#
+#..........#...g.#
+#..........#.....#
 ##################
 `,
   },
   {
     id: 18,
     name: 'Effectif mêlé',
+    // Relevé sur capture du vrai jeu, avec le schéma de l'auteur du projet.
+    //
+    // Deux barres horizontales identiques de dix blocs — **trois incassables,
+    // quatre cassables, trois incassables** — centrées, laissant trois colonnes
+    // libres de chaque côté. Entre elles, un couloir de trois rangées.
+    //
+    // Chaque barre est reliée à la bordure la plus proche par un **Z** posé au
+    // centre exact du plateau : trois rangées de mur sur la colonne 8, trois sur
+    // la colonne 9, les deux se rejoignant sur une rangée commune — d'où six
+    // blocs seulement, et non huit. Le Z du bas est celui du haut retourné d'un
+    // demi-tour ; il compte une rangée de plus parce que les barres, elles, ne
+    // sont pas symétriques (cinq rangées libres au-dessus, six au-dessous).
+    //
+    // Les deux Z touchent leur barre en plein liège, ce qui donne quatre poches
+    // cassables distinctes au lieu d'une seule brèche centrale.
     grid: `
 ##################
-#..p..........p..#
+#.......#........#
+#.......#........#
+#...t...##.p.....#
+#.....r..#.......#
+#........#.......#
+#...###XXXX###...#
 #................#
-#...#########....#
-#........r.......#
-#..t...........t.#
 #........g.......#
-#.....XXXXX......#
 #................#
-#................#
-#.....########...#
-#................#
-#................#
-#................#
-#...####..####...#
-#........1.......#
-#................#
+#...###XXXX###...#
+#.......#........#
+#.......#........#
+#.......#........#
+#..1....##....t..#
+#........#.p.....#
+#........#.......#
 ##################
 `,
   },
   {
     id: 19,
     name: 'La meute',
+    // Relevé sur capture du vrai jeu, décrit rangée par rangée par l'auteur du
+    // projet : trois barres de treize blocs, chacune laissant trois colonnes
+    // libres à un bout, et l'ouverture alterne d'un côté à l'autre. Le plateau
+    // se parcourt donc en **serpentin** — trois rangées libres au-dessus de la
+    // première barre, quatre dans chacun des deux couloirs, deux seulement sous
+    // la dernière.
+    //
+    // Les barres alternent deux cassables et deux incassables, et finissent
+    // toutes par du bois côté ouverture : le passage libre n'est pas doublé
+    // d'une brèche facile juste à côté.
+    //
+    // Huit violets, l'effectif le plus nombreux de la campagne. Le serpentin
+    // leur convient : ils posent des mines, et un couloir sans issue latérale
+    // transforme chaque mine en verrou.
     grid: `
 ##################
-#..p..p.....p..p.#
+#................#
+#.p....p.....p...#
+#................#
+#XX##XX##XX###...#
 #................#
 #................#
-#...##......##...#
-#...##......##...#
+#.........p.....p#
 #................#
-#..p...........p.#
-#.......XX.......#
-#.......XX.......#
-#..p...........p.#
+#...XX##XX##XX####
+#.p..............#
 #................#
-#...##......##...#
-#...##......##...#
+#...............p#
 #................#
-#........1.......#
+#XX##XX##XX###...#
+#.1..........p...#
 #................#
 ##################
 `,
@@ -640,23 +810,31 @@ const HAND_AUTHORED_MISSIONS: readonly Mission[] = [
   {
     id: 20,
     name: 'Les invisibles',
+    // Relevé sur capture du vrai jeu : **le terrain est entièrement nu**. Pas
+    // un bloc, pas un trou — seulement le joueur d'un côté et deux tanks
+    // invisibles de l'autre.
+    //
+    // C'est le seul tracé vide de la campagne, et c'est délibéré : la mission
+    // sert à faire découvrir le blanc, qu'on ne voit qu'au reflet de son ombre
+    // et à la trace de ses obus. Le moindre couvert lui donnerait un avantage
+    // qui rendrait la leçon illisible.
     grid: `
 ##################
 #................#
-#..w..........w..#
 #................#
-#..###.....###...#
 #................#
-#.....XXXXXX.....#
 #................#
-#..##.......##...#
 #................#
-#...###....###...#
 #................#
-#.....XXXXXX.....#
+#............w...#
 #................#
-#...###.....##...#
-#........1.......#
+#.1............w.#
+#................#
+#................#
+#................#
+#................#
+#................#
+#................#
 #................#
 ##################
 `,
