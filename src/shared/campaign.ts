@@ -39,6 +39,36 @@ export const CAMPAIGN_RULES = {
   bonusEveryMissions: 5,
 } as const;
 
+/**
+ * Réglages d'une partie, choisis à la création du salon.
+ *
+ * Distincts de `CAMPAIGN_RULES`, qui décrit le jeu original : ceux-ci sont des
+ * variantes assumées, et le salon en affiche la valeur pour qu'aucun joueur ne
+ * découvre en cours de route qu'il ne joue pas aux mêmes règles que les autres.
+ */
+export interface CampaignSettings {
+  /**
+   * Un tank offert toutes les N missions réussies, ou `0` pour n'en offrir
+   * aucun. C'est `CAMPAIGN_RULES.bonusEveryMissions` rendu réglable.
+   */
+  bonusEveryMissions: number;
+
+  /**
+   * Les ennemis déjà détruits reviennent-ils quand on recommence une mission ?
+   *
+   * `true` reproduit l'original : l'arène est rechargée entière. `false` fait
+   * de chaque tentative un progrès — quatre ennemis, deux tués avant de mourir,
+   * on reprend contre les deux qui restent.
+   */
+  respawnEnemiesOnRetry: boolean;
+}
+
+/** Réglages par défaut : ceux du jeu original. */
+export const DEFAULT_CAMPAIGN_SETTINGS: CampaignSettings = {
+  bonusEveryMissions: CAMPAIGN_RULES.bonusEveryMissions,
+  respawnEnemiesOnRetry: true,
+};
+
 export type CampaignStatus =
   /** Une mission est en cours. */
   | 'playing'
@@ -85,6 +115,7 @@ export function startCampaign(mission = 1): CampaignState {
 export function advanceCampaign(
   state: CampaignState,
   outcome: MissionOutcome,
+  settings: CampaignSettings = DEFAULT_CAMPAIGN_SETTINGS,
 ): CampaignState {
   if (state.status !== 'playing' || outcome === 'playing') return state;
 
@@ -98,17 +129,25 @@ export function advanceCampaign(
 
   if (state.mission >= CAMPAIGN_LENGTH) return { ...state, status: 'victory' };
 
-  const earnsBonus = state.mission % CAMPAIGN_RULES.bonusEveryMissions === 0;
-
   return {
     mission: state.mission + 1,
-    spares: state.spares + (earnsBonus ? 1 : 0),
+    spares: state.spares + (earnsBonusTank(state.mission, settings) ? 1 : 0),
     status: 'playing',
     attempt: 1,
   };
 }
 
-/** La mission suivante offre-t-elle un tank ? Sert à l'annoncer dans le HUD. */
-export function earnsBonusTank(mission: number): boolean {
-  return mission % CAMPAIGN_RULES.bonusEveryMissions === 0 && mission < CAMPAIGN_LENGTH;
+/**
+ * La mission suivante offre-t-elle un tank ? Sert aussi à l'annoncer dans le HUD.
+ *
+ * Une périodicité nulle désactive le bonus : c'est ce que veut dire « pas de
+ * vies bonus » dans les réglages de salon, et c'est traité ici plutôt que chez
+ * l'appelant pour qu'un modulo par zéro n'ait aucune chance d'exister.
+ */
+export function earnsBonusTank(
+  mission: number,
+  settings: CampaignSettings = DEFAULT_CAMPAIGN_SETTINGS,
+): boolean {
+  if (settings.bonusEveryMissions <= 0) return false;
+  return mission % settings.bonusEveryMissions === 0 && mission < CAMPAIGN_LENGTH;
 }

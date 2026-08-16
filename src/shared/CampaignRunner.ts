@@ -24,8 +24,8 @@ import { missionOutcome } from '@core/systems/mission';
 import type { MissionOutcome } from '@core/systems/mission';
 import { secondsToTicks, tick } from '@core/tick';
 import type { TickInputs } from '@core/tick';
-import { advanceCampaign, startCampaign } from './campaign';
-import type { CampaignState } from './campaign';
+import { DEFAULT_CAMPAIGN_SETTINGS, advanceCampaign, startCampaign } from './campaign';
+import type { CampaignSettings, CampaignState } from './campaign';
 import { loadMission } from './missions/load';
 import { missionByNumber } from './missions/missions';
 
@@ -65,6 +65,8 @@ export interface CampaignRunnerOptions {
   playerIds: readonly string[];
   /** Mission de départ, à partir de 1. */
   startingMission?: number;
+  /** Variantes de règles. Par défaut, celles du jeu original. */
+  settings?: CampaignSettings;
 }
 
 export class CampaignRunner {
@@ -86,6 +88,35 @@ export class CampaignRunner {
   #phase: CampaignPhase = 'playing';
 
   /**
+   * Ennemis détruits par chaque joueur depuis le début de la partie.
+   *
+   * Le compteur du tank, lui, appartient au monde et disparaît avec lui à
+   * chaque mission. On replie donc ici ce qu'il portait avant de le jeter, et
+   * le score affiché est la somme des deux — voir {@link scores}.
+   *
+   * Indexé par identifiant de joueur et non par tank : c'est le seul des deux
+   * qui survit à une mission, à une mort, et à une reconnexion.
+   */
+  readonly #closedKills = new Map<string, number>();
+
+  readonly #settings: CampaignSettings;
+
+  /**
+   * Ennemis déjà détruits sur la mission en cours, quand ils ne reviennent pas.
+   *
+   * Retenus par **rang dans la liste des ennemis de la mission** : c'est le seul
+   * repère stable d'une tentative à l'autre, les identifiants d'entités étant
+   * réattribués à chaque rechargement du monde.
+   *
+   * Vidé dès qu'on change de mission — la mémoire ne porte que sur les
+   * tentatives successives d'une même arène.
+   */
+  readonly #clearedEnemies = new Set<number>();
+
+  /** Rang de mission de chaque tank ennemi du monde courant. */
+  #enemyRankByTankId: ReadonlyMap<EntityId, number> = new Map();
+
+  /**
    * Issue retenue au moment où elle s'est produite.
    *
    * Elle est prononcée dès que la mission bascule, et non relue à la fin du
@@ -94,8 +125,13 @@ export class CampaignRunner {
    */
   #decided: MissionOutcome | null = null;
 
-  constructor({ playerIds, startingMission = 1 }: CampaignRunnerOptions) {
+  constructor({
+    playerIds,
+    startingMission = 1,
+    settings = DEFAULT_CAMPAIGN_SETTINGS,
+  }: CampaignRunnerOptions) {
     this.#playerIds = [...playerIds];
+    this.#settings = settings;
     this.#state = startCampaign(startingMission);
     this.#world = this.#openMission();
     // Une partie commence comme n'importe quel round : par son annonce. Tomber
@@ -127,6 +163,24 @@ export class CampaignRunner {
     return this.#playerIds;
   }
 
+  /**
+   * Ennemis détruits par joueur depuis le début de la partie, sièges compris.
+   *
+   * Somme de ce qui a été replié aux missions précédentes et de ce que le tank
+   * courant a marqué depuis. Un joueur sans tank — mort, ou tout juste arrivé —
+   * garde son total.
+   */
+  get scores(): ReadonlyMap<string, number> {
+    const scores = new Map<string, number>();
+
+    for (const playerId of this.#playerIds) {
+      const current = this.tankOf(playerId)?.kills ?? 0;
+      scores.set(playerId, (this.#closedKills.get(playerId) ?? 0) + current);
+    }
+
+    return scores;
+  }
+
   tankOf(playerId: string): Tank | undefined {
     const id = this.#tankByPlayer.get(playerId);
     return id === undefined ? undefined : this.#world.tanks.find((tank) => tank.id === id);
@@ -156,6 +210,13 @@ export class CampaignRunner {
 
   /** Retire un joueur et son tank. Les autres et l'IA continuent sans interruption. */
   removePlayer(playerId: string): void {
+    // Ses prises de la mission en cours sont repliées avant que son tank
+    // disparaisse : s'il revient plus tard, il retrouve son score.
+    const scored = this.tankOf(playerId)?.kills ?? 0;
+    if (scored > 0) {
+      this.#closedKills.set(playerId, (this.#closedKills.get(playerId) ?? 0) + scored);
+    }
+
     const tankId = this.#tankByPlayer.get(playerId);
     this.#tankByPlayer.delete(playerId);
 
@@ -171,6 +232,9 @@ export class CampaignRunner {
     this.#state = startCampaign();
     this.#decided = null;
     this.#world = this.#openMission();
+    // Nouvelle partie, tableau remis à zéro : `#openMission` vient de replier
+    // les prises de la partie qu'on abandonne, on les efface derrière lui.
+    this.#closedKills.clear();
     this.#beginBriefing();
   }
 
@@ -231,8 +295,20 @@ export class CampaignRunner {
   #resolve(): void {
     // `#decided` et non `missionOutcome(this.#world)` : le monde a pu changer
     // depuis, et c'est l'issue prononcée sur le moment qui compte.
-    this.#state = advanceCampaign(this.#state, this.#decided ?? missionOutcome(this.#world));
+    const outcome = this.#decided ?? missionOutcome(this.#world);
+    const from = this.#state.mission;
+
+    this.#state = advanceCampaign(this.#state, outcome, this.#settings);
     this.#decided = null;
+
+    // La mémoire des ennemis abattus ne vaut que pour les tentatives
+    // successives d'une même arène : on la remplit sur un échec, on la vide dès
+    // qu'on avance. Le test sur le numéro de mission couvre les deux cas d'un
+    // coup, y compris la partie perdue qui ne rouvrira jamais rien.
+    if (this.#state.mission !== from) this.#clearedEnemies.clear();
+    else if (outcome === 'failed' && !this.#settings.respawnEnemiesOnRetry) {
+      this.#rememberClearedEnemies();
+    }
 
     if (this.#state.status !== 'playing') {
       this.#phase = 'playing';
@@ -246,6 +322,35 @@ export class CampaignRunner {
     this.#beginBriefing();
   }
 
+  /**
+   * Note quels ennemis ne reviendront pas à la prochaine tentative.
+   *
+   * Les rangs déjà retenus le restent : sur une troisième tentative, ce qui a
+   * été abattu aux deux premières compte toujours.
+   */
+  #rememberClearedEnemies(): void {
+    for (const [tankId, rank] of this.#enemyRankByTankId) {
+      const tank = this.#world.tanks.find((candidate) => candidate.id === tankId);
+      // Absent du monde ou mort : dans les deux cas il a été détruit.
+      if (!tank || !tank.alive) this.#clearedEnemies.add(rank);
+    }
+  }
+
+  /**
+   * Replie les prises du monde courant avant de le jeter.
+   *
+   * Appelé juste avant d'ouvrir une mission, et non après : à ce moment-là le
+   * monde sortant est encore là, tanks compris. L'appeler après reviendrait à
+   * compter les prises du monde entrant, qui sont nulles.
+   */
+  #foldKills(): void {
+    for (const playerId of this.#playerIds) {
+      const kills = this.tankOf(playerId)?.kills;
+      if (!kills) continue;
+      this.#closedKills.set(playerId, (this.#closedKills.get(playerId) ?? 0) + kills);
+    }
+  }
+
   /** Fige la mission chargée le temps de son annonce. */
   #beginBriefing(): void {
     this.#phase = 'briefing';
@@ -254,14 +359,20 @@ export class CampaignRunner {
 
   /** Charge la mission courante dans un monde neuf. */
   #openMission(): World {
+    this.#foldKills();
+
     const mission = missionByNumber(this.#state.mission);
     if (!mission) throw new Error(`Mission ${this.#state.mission} inexistante`);
 
-    const { world, playerTankIds } = loadMission(mission, { playerIds: this.#playerIds });
+    const { world, playerTankIds, enemyRankByTankId } = loadMission(mission, {
+      playerIds: this.#playerIds,
+      skipEnemies: this.#clearedEnemies,
+    });
 
     this.#tankByPlayer = new Map(
       this.#playerIds.map((playerId, index) => [playerId, playerTankIds[index]!]),
     );
+    this.#enemyRankByTankId = enemyRankByTankId;
 
     return world;
   }

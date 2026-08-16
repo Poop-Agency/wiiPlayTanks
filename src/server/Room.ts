@@ -24,10 +24,13 @@ import { TANK_PROFILES } from '@core/systems/ai/profiles';
 import { TICK_RATE, secondsToTicks } from '@core/tick';
 import { TUNING } from '@core/tuning';
 import { CampaignRunner } from '@shared/CampaignRunner';
+import { DEFAULT_CAMPAIGN_SETTINGS } from '@shared/campaign';
+import type { CampaignSettings } from '@shared/campaign';
 import { MAX_PLAYERS_PER_ROOM, SNAPSHOT_RATE, stripTiles } from '@shared/protocol';
 import type {
   InputMessage,
   LobbyPlayer,
+  PlayerScore,
   ServerMessage,
   SnapshotMessage,
   TerrainMessage,
@@ -85,6 +88,9 @@ export class Room {
   readonly #players = new Map<string, Player>();
   #runner: CampaignRunner | null = null;
 
+  /** Règles du salon, fixées par celui qui l'ouvre. */
+  #settings: CampaignSettings = DEFAULT_CAMPAIGN_SETTINGS;
+
   #started = false;
 
   /** Pas écoulés depuis la création. Sert d'horloge à la salle. */
@@ -135,8 +141,16 @@ export class Room {
    * Un identifiant déjà connu **reprend son siège** : c'est ce qui rend une
    * reconnexion transparente après une coupure passagère.
    */
-  join(playerId: string, name: string): Outgoing[] {
+  join(playerId: string, name: string, settings?: CampaignSettings): Outgoing[] {
     const existing = this.#players.get(playerId);
+
+    // Les règles se fixent à l'ouverture du salon, et là seulement : une fois
+    // qu'un joueur est installé, les changer sous lui reviendrait à modifier la
+    // partie qu'il a rejointe. La réserve de tanks étant commune, ça ne
+    // concernerait d'ailleurs pas que lui.
+    if (settings && this.#players.size === 0 && !this.#started) {
+      this.#settings = settings;
+    }
 
     // Un siège se garde à la reconnexion (`existing`), mais un salon plein
     // refuse un nouveau venu : au-delà, `PLAYER_SEAT_COLORS` n'a plus de
@@ -154,6 +168,22 @@ export class Room {
       existing.connected = true;
       existing.disconnectedAtTick = null;
       existing.name = name;
+
+      // ⚠ Le compteur d'intentions repart de zéro, et c'est ce qui rendait une
+      // reconnexion inutilisable.
+      //
+      // Recharger la page crée une session cliente neuve, qui numérote à
+      // partir de zéro. En gardant l'accusé de la session précédente, la salle
+      // jugeait « déjà dépassée » chaque intention du revenant et les jetait
+      // toutes — le tank ne bougeait plus. Pire, l'accusé périmé renvoyé dans
+      // les instantanés faisait abandonner au client sa prédiction vingt fois
+      // par seconde, ce qui se voit comme un rollback continu.
+      //
+      // Un siège se reprend donc à zéro. Le tampon en cours n'a pas davantage
+      // de sens : il porte la numérotation de la session morte.
+      existing.ack = -1;
+      existing.pending.length = 0;
+      existing.lastApplied = NEUTRAL_INPUT;
     } else {
       this.#players.set(playerId, {
         playerId,
@@ -207,7 +237,15 @@ export class Room {
   }
 
   /**
-   * Démarre la partie. Sans effet si elle a déjà commencé.
+   * Démarre la partie, ou **relance** une campagne terminée.
+   *
+   * Les trois cas sont distincts et c'est important : tant que la partie tourne
+   * la demande est ignorée — sans quoi un joueur qui appuie sur Entrée par
+   * réflexe effacerait la progression de tout le salon. Une fois la réserve
+   * épuisée ou la campagne bouclée, en revanche, c'est exactement ce qu'on veut.
+   *
+   * Le refus pur et simple était un cul-de-sac : arrivé au bout, plus rien ne
+   * repartait.
    *
    * `MIN_PLAYERS_TO_START` n'est pas imposé ici : c'est une recommandation du
    * salon, pas une règle du serveur. Un salon d'un seul joueur reste un co-op
@@ -215,11 +253,19 @@ export class Room {
    * exactement ce sur quoi repose l'isolation entre salons (voir les tests).
    */
   start(): Outgoing[] {
-    if (this.#started) return [];
+    if (!this.#started) {
+      this.#started = true;
+      this.#runner = new CampaignRunner({
+        playerIds: [...this.#players.keys()],
+        settings: this.#settings,
+      });
+      return [this.#lobbyMessage()];
+    }
 
-    this.#started = true;
-    this.#runner = new CampaignRunner({ playerIds: [...this.#players.keys()] });
+    const runner = this.#runner;
+    if (!runner || runner.campaign.status === 'playing') return [];
 
+    runner.restart();
     return [this.#lobbyMessage()];
   }
 
@@ -314,6 +360,7 @@ export class Room {
     const world = runner.world;
     const messages: Outgoing[] = [];
     const partial = stripTiles(world);
+    const scores = this.#scoreboard(runner);
 
     for (const player of this.#players.values()) {
       if (!player.connected) continue;
@@ -339,6 +386,7 @@ export class Room {
         gridVersion: world.grid.version,
         world: partial,
         campaign: runner.campaign,
+        scores,
         phase: runner.phase,
       };
 
@@ -360,6 +408,26 @@ export class Room {
       connected: player.connected,
     }));
 
-    return { to: null, message: { t: 'lobby', room: this.name, players, started: this.#started } };
+    return {
+      to: null,
+      message: {
+        t: 'lobby',
+        room: this.name,
+        players,
+        started: this.#started,
+        settings: this.#settings,
+      },
+    };
+  }
+
+  /** Prises de chaque joueur, dans l'ordre des sièges. */
+  #scoreboard(runner: CampaignRunner): PlayerScore[] {
+    const scores = runner.scores;
+
+    return [...this.#players.values()].map((player) => ({
+      playerId: player.playerId,
+      name: player.name,
+      kills: scores.get(player.playerId) ?? 0,
+    }));
   }
 }

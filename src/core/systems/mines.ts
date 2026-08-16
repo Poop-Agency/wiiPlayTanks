@@ -17,6 +17,7 @@ import { secondsToTicks } from '../tick.js';
 import { TUNING } from '../tuning.js';
 import { allocateEntityId } from '../world.js';
 import { profileOf } from './ai/profiles.js';
+import { killTank } from './damage.js';
 import type { EntityId, InputCommand, Mine, Tank, World } from '../state.js';
 
 /**
@@ -138,7 +139,7 @@ function detonate(
   for (const tank of world.tanks) {
     if (!tank.alive) continue;
     if (circleReachesBox(mine.x, mine.y, radius, tank.x, tank.y, tankHalf)) {
-      tank.alive = false;
+      killTank(world, tank, mine.ownerId);
     }
   }
 

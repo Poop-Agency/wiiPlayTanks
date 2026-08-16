@@ -18,7 +18,7 @@ import { enemiesRemaining, missionOutcome } from '@core/systems/mission';
 import type { MissionOutcome } from '@core/systems/mission';
 import { TUNING } from '@core/tuning';
 import { CAMPAIGN_LENGTH } from '@shared/campaign';
-import type { CampaignState, CampaignStatus } from '@shared/campaign';
+import type { CampaignSettings, CampaignState, CampaignStatus } from '@shared/campaign';
 import type { CampaignPhase } from '@shared/CampaignRunner';
 import { missionByNumber } from '@shared/missions/missions';
 import type { LobbyPlayer } from '@shared/protocol';
@@ -38,6 +38,8 @@ export interface LobbyView {
   maxPlayers: number;
   /** Raison d'un refus de connexion (salon plein, version incompatible…), le cas échéant. */
   error: string | null;
+  /** Règles retenues par celui qui a ouvert le salon. */
+  settings: CampaignSettings;
 }
 
 /**
@@ -68,6 +70,15 @@ export interface CampaignView {
   /** Coéquipiers connectés, en co-op. Vide en solo. */
   teammates: string[];
 
+  /**
+   * Prises de chaque joueur, en co-op. Vide en solo, où le score n'oppose
+   * personne à personne.
+   *
+   * `you` marque la ligne du joueur local : c'est la seule qu'on cherche du
+   * regard, et les noms peuvent se ressembler.
+   */
+  scores: Array<{ name: string; kills: number; you: boolean }>;
+
   /** Présent tant que la partie n'a pas démarré ; absent sinon (et toujours en solo). */
   lobby?: LobbyView;
 
@@ -94,6 +105,7 @@ export function buildCampaignView(
   tank: Tank | undefined,
   teammates: string[] = [],
   phase: CampaignPhase = 'playing',
+  scores: CampaignView['scores'] = [],
 ): CampaignView {
   const mission = missionByNumber(state.mission);
 
@@ -116,6 +128,7 @@ export function buildCampaignView(
     playerAlive: tank?.alive ?? false,
 
     teammates,
+    scores,
     phase,
   };
 }

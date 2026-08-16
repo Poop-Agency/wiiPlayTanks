@@ -97,6 +97,7 @@ export function createTank(world: World, options: TankOptions): Tank {
     bodyAngle: angle,
     turretAngle: angle,
     alive: true,
+    kills: 0,
     activeShells: 0,
     activeMines: 0,
     reloadTicks: 0,

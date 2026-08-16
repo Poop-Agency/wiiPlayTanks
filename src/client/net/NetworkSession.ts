@@ -29,9 +29,9 @@ import { TANK_PROFILES } from '@core/systems/ai/profiles';
 import { DT, TICK_RATE } from '@core/tick';
 import { TUNING } from '@core/tuning';
 import { createWorld } from '@core/world';
-import type { CampaignState } from '@shared/campaign';
+import type { CampaignSettings, CampaignState } from '@shared/campaign';
 import type { CampaignPhase } from '@shared/CampaignRunner';
-import { startCampaign } from '@shared/campaign';
+import { DEFAULT_CAMPAIGN_SETTINGS, startCampaign } from '@shared/campaign';
 import { ARENA_HEIGHT_TILES, ARENA_WIDTH_TILES } from '@shared/missions/missions';
 import {
   INTERPOLATION_DELAY_SECONDS,
@@ -39,7 +39,7 @@ import {
   MIN_PLAYERS_TO_START,
   withTiles,
 } from '@shared/protocol';
-import type { LobbyPlayer, ServerMessage } from '@shared/protocol';
+import type { LobbyPlayer, PlayerScore, ServerMessage } from '@shared/protocol';
 import { captureSnapshot, interpolateSnapshots } from '../render/snapshots';
 import type { RenderSnapshot } from '../render/snapshots';
 import { buildCampaignView } from '../session';
@@ -97,6 +97,8 @@ export class NetworkSession implements Session {
   #campaign: CampaignState = startCampaign();
   #phase: CampaignPhase = 'playing';
   #players: LobbyPlayer[] = [];
+  #scores: PlayerScore[] = [];
+  #settings: CampaignSettings = DEFAULT_CAMPAIGN_SETTINGS;
   #started = false;
   #room = '';
 
@@ -157,6 +159,17 @@ export class NetworkSession implements Session {
       .filter((player) => player.playerId !== this.#playerId)
       .map((player) => (player.connected ? player.name : `${player.name} (hors ligne)`));
 
+    // Trié par prises décroissantes : c'est un classement, il se lit de haut en
+    // bas. À égalité, l'ordre des sièges — stable d'un instantané à l'autre,
+    // donc les lignes ne dansent pas.
+    const scores = [...this.#scores]
+      .sort((left, right) => right.kills - left.kills)
+      .map((entry) => ({
+        name: entry.name,
+        kills: entry.kills,
+        you: entry.playerId === this.#playerId,
+      }));
+
     // Tant qu'aucun instantané n'est arrivé, `this.world` est un monde d'attente
     // sans le moindre tank. `missionOutcome` y lirait « aucun joueur vivant » et
     // afficherait un bandeau d'échec avant même que la connexion se termine —
@@ -183,16 +196,31 @@ export class NetworkSession implements Session {
           minPlayers: MIN_PLAYERS_TO_START,
           maxPlayers: MAX_PLAYERS_PER_ROOM,
           error: this.#byeReason,
+          settings: this.#settings,
         },
       };
     }
 
-    return buildCampaignView(this.#campaign, this.world, this.playerTank, teammates, this.#phase);
+    return buildCampaignView(
+      this.#campaign,
+      this.world,
+      this.playerTank,
+      teammates,
+      this.#phase,
+      scores,
+    );
   }
 
-  /** Demande le démarrage. Sans effet si la partie tourne déjà. */
+  /**
+   * Demande le démarrage, ou la reprise d'une campagne terminée.
+   *
+   * L'arbitrage appartient au serveur, seul à savoir où en est la partie : il
+   * démarre, relance ou ignore. Le client filtrait autrefois lui-même sur « la
+   * partie a-t-elle déjà démarré », ce qui rendait une campagne perdue
+   * définitivement bloquée — plus rien ne repartait.
+   */
   restart(): void {
-    if (!this.#started) this.#transport.send({ t: 'start' });
+    this.#transport.send({ t: 'start' });
   }
 
   /* ── Réception ────────────────────────────────────────────────────────── */
@@ -215,6 +243,9 @@ export class NetworkSession implements Session {
       case 'lobby':
         this.#players = message.players;
         this.#started = message.started;
+        // Même raison que pour les scores : un serveur d'une version antérieure
+        // n'envoie pas ce champ, et le salon ne doit pas tomber pour autant.
+        this.#settings = message.settings ?? DEFAULT_CAMPAIGN_SETTINGS;
         break;
 
       case 'terrain':
@@ -249,6 +280,12 @@ export class NetworkSession implements Session {
     this.#reconciler.reconcile(world, message.ack, message.yourTankId);
     this.#campaign = message.campaign;
     this.#phase = message.phase;
+    // Le repli n'est pas décoratif : pendant un déploiement, un client déjà
+    // chargé continue de parler à un serveur qui n'a pas encore redémarré, et
+    // reçoit donc des instantanés sans ce champ. Sans garde, `status()` lèverait
+    // à chaque image et la boucle de rendu mourrait — le jeu se fige, ce qui ne
+    // ressemble en rien à sa cause.
+    this.#scores = message.scores ?? [];
 
     // Changement de mission : le monde repart de zéro, et interpoler d'une
     // arène à l'autre ferait glisser les tanks à travers l'écran.

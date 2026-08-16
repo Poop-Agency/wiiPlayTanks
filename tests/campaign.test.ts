@@ -8,8 +8,11 @@ import {
   earnsBonusTank,
   startCampaign,
 } from '../src/shared/campaign.js';
-import type { CampaignState } from '../src/shared/campaign.js';
+import type { CampaignSettings, CampaignState } from '../src/shared/campaign.js';
 import { CampaignRunner } from '../src/shared/CampaignRunner.js';
+import { killTank } from '../src/core/systems/damage.js';
+import { loadMission } from '../src/shared/missions/load.js';
+import { missionByNumber } from '../src/shared/missions/missions.js';
 
 /**
  * La progression est un réducteur pur : c'est ce qui permettra au serveur (#13)
@@ -17,9 +20,19 @@ import { CampaignRunner } from '../src/shared/CampaignRunner.js';
  * tests vérifient donc aussi qu'elle ne mute rien.
  */
 
-/** Rejoue une suite d'issues depuis un état donné. */
-function replay(state: CampaignState, outcomes: readonly MissionOutcome[]): CampaignState {
-  return outcomes.reduce(advanceCampaign, state);
+/**
+ * Rejoue une suite d'issues depuis un état donné.
+ *
+ * La lambda plutôt que `reduce(advanceCampaign, …)` : le réducteur accepte
+ * désormais des réglages en troisième paramètre, et `reduce` y passerait
+ * l'indice de l'élément courant.
+ */
+function replay(
+  state: CampaignState,
+  outcomes: readonly MissionOutcome[],
+  settings?: CampaignSettings,
+): CampaignState {
+  return outcomes.reduce((current, outcome) => advanceCampaign(current, outcome, settings), state);
 }
 
 describe('départ de campagne', () => {
@@ -136,6 +149,30 @@ describe('invariants', () => {
   });
 });
 
+describe('réglages de salon', () => {
+  const NO_BONUS: CampaignSettings = { bonusEveryMissions: 0, respawnEnemiesOnRetry: true };
+  const EVERY_TWO: CampaignSettings = { bonusEveryMissions: 2, respawnEnemiesOnRetry: true };
+
+  test('une périodicité nulle supprime le tank offert', () => {
+    // Et surtout : pas de modulo par zéro. C'est traité dans `earnsBonusTank`
+    // plutôt que chez l'appelant, pour qu'aucun chemin ne puisse l'oublier.
+    expect(earnsBonusTank(5, NO_BONUS)).toBe(false);
+    expect(earnsBonusTank(10, NO_BONUS)).toBe(false);
+
+    const after = replay(startCampaign(), ['cleared', 'cleared', 'cleared', 'cleared', 'cleared'], NO_BONUS);
+    expect(after.spares).toBe(CAMPAIGN_RULES.startingSpares);
+  });
+
+  test('une périodicité personnalisée est respectée', () => {
+    expect(earnsBonusTank(2, EVERY_TWO)).toBe(true);
+    expect(earnsBonusTank(3, EVERY_TWO)).toBe(false);
+
+    // Quatre missions franchies, donc les paliers 2 et 4 : deux tanks offerts.
+    const after = replay(startCampaign(), ['cleared', 'cleared', 'cleared', 'cleared'], EVERY_TWO);
+    expect(after.spares).toBe(CAMPAIGN_RULES.startingSpares + 2);
+  });
+});
+
 describe('cycle de mission', () => {
   /** Fait avancer le runner jusqu'à ce que la condition tienne, ou échoue. */
   function advanceUntil(runner: CampaignRunner, done: () => boolean, limit = 2000): void {
@@ -242,5 +279,158 @@ describe('cycle de mission', () => {
     advanceUntil(runner, () => runner.phase === 'playing');
     runner.step([]);
     expect(runner.world.tick).toBeGreaterThan(tickAvant);
+  });
+});
+
+describe('tableau des scores', () => {
+  /** Fait avancer le runner jusqu'à ce que la condition tienne, ou échoue. */
+  function advanceUntil(runner: CampaignRunner, done: () => boolean, limit = 2000): void {
+    for (let step = 0; step < limit; step++) {
+      if (done()) return;
+      runner.step([]);
+    }
+    throw new Error('condition jamais atteinte');
+  }
+
+  function started(playerIds: string[]): CampaignRunner {
+    const runner = new CampaignRunner({ playerIds });
+    advanceUntil(runner, () => runner.phase === 'playing');
+    return runner;
+  }
+
+  /** Abat tous les ennemis en les créditant au tank d'un joueur. */
+  function wipeEnemies(runner: CampaignRunner, playerId: string): number {
+    const killer = runner.tankOf(playerId)!;
+    let killed = 0;
+
+    for (const tank of runner.world.tanks) {
+      if (tank.playerId !== null || !tank.alive) continue;
+      killTank(runner.world, tank, killer.id);
+      killed++;
+    }
+
+    return killed;
+  }
+
+  test('les prises survivent au changement de mission', () => {
+    // Le compteur vit sur le tank, et le tank disparaît avec son monde. Sans le
+    // repli opéré par le runner, le tableau repartirait de zéro à chaque
+    // mission — c'est-à-dire qu'il ne servirait à rien.
+    const runner = started(['a']);
+    const first = wipeEnemies(runner, 'a');
+    expect(first).toBeGreaterThan(0);
+    expect(runner.scores.get('a')).toBe(first);
+
+    advanceUntil(runner, () => runner.campaign.mission === 2);
+    expect(runner.world.tanks.find((tank) => tank.playerId === 'a')!.kills).toBe(0);
+    expect(runner.scores.get('a')).toBe(first);
+
+    const second = wipeEnemies(runner, 'a');
+    expect(runner.scores.get('a')).toBe(first + second);
+  });
+
+  test('un coéquipier qui arrive en cours de partie ne fait perdre le score de personne', () => {
+    // L'arrivée libre reconstruit le monde pour donner un point de départ au
+    // nouveau venu : tous les compteurs de tanks repartent à zéro au passage.
+    const runner = started(['a']);
+    const scored = wipeEnemies(runner, 'a');
+
+    runner.addPlayer('b');
+
+    expect(runner.scores.get('a')).toBe(scored);
+    expect(runner.scores.get('b')).toBe(0);
+  });
+
+  test('ni le suicide ni le tir fratricide ne comptent', () => {
+    const runner = started(['a', 'b']);
+    const a = runner.tankOf('a')!;
+    const b = runner.tankOf('b')!;
+
+    killTank(runner.world, a, a.id);
+    killTank(runner.world, b, a.id);
+
+    expect(runner.scores.get('a')).toBe(0);
+  });
+});
+
+describe('ennemis persistants d\'une tentative à l\'autre', () => {
+  function advanceUntil(runner: CampaignRunner, done: () => boolean, limit = 2000): void {
+    for (let step = 0; step < limit; step++) {
+      if (done()) return;
+      runner.step([]);
+    }
+    throw new Error('condition jamais atteinte');
+  }
+
+  /**
+   * Runner sur la **mission 3**, et non la première.
+   *
+   * La mission 1 n'aligne qu'un seul brun : on ne peut pas y distinguer « les
+   * abattus ne reviennent pas » de « l'arène est rechargée entière ».
+   */
+  function started(settings: CampaignSettings): CampaignRunner {
+    const runner = new CampaignRunner({ playerIds: ['a'], startingMission: 3, settings });
+    advanceUntil(runner, () => runner.phase === 'playing');
+    return runner;
+  }
+
+  function enemies(runner: CampaignRunner): number {
+    return runner.world.tanks.filter((tank) => tank.playerId === null && tank.alive).length;
+  }
+
+  /** Tue `count` ennemis, puis le joueur : la mission est perdue. */
+  function loseAfterKilling(runner: CampaignRunner, count: number): void {
+    let killed = 0;
+    for (const tank of runner.world.tanks) {
+      if (tank.playerId !== null || killed >= count) continue;
+      tank.alive = false;
+      killed++;
+    }
+
+    for (const tank of runner.world.tanks) {
+      if (tank.playerId !== null) tank.alive = false;
+    }
+  }
+
+  test('les ennemis abattus ne reviennent pas quand le réglage le demande', () => {
+    const runner = started({ bonusEveryMissions: 5, respawnEnemiesOnRetry: false });
+    const total = enemies(runner);
+    expect(total).toBeGreaterThan(1);
+
+    loseAfterKilling(runner, 1);
+    advanceUntil(runner, () => runner.campaign.attempt === 2 && runner.phase === 'briefing');
+
+    expect(runner.campaign.mission).toBe(3);
+    expect(enemies(runner)).toBe(total - 1);
+  });
+
+  test('par défaut l\'arène est rechargée entière', () => {
+    const runner = started({ bonusEveryMissions: 5, respawnEnemiesOnRetry: true });
+    const total = enemies(runner);
+
+    loseAfterKilling(runner, 1);
+    advanceUntil(runner, () => runner.campaign.attempt === 2 && runner.phase === 'briefing');
+
+    expect(enemies(runner)).toBe(total);
+  });
+
+  test('la mémoire ne franchit pas la mission', () => {
+    // Elle ne vaut que pour les tentatives successives d'une même arène :
+    // sinon le rang retenu désignerait un tout autre ennemi dans l'arène
+    // suivante, et l'on verrait disparaître un tank au hasard.
+    const runner = started({ bonusEveryMissions: 5, respawnEnemiesOnRetry: false });
+
+    loseAfterKilling(runner, 1);
+    advanceUntil(runner, () => runner.campaign.attempt === 2 && runner.phase === 'playing');
+
+    // Cette fois on nettoie : on passe à la mission 2, à effectif plein.
+    for (const tank of runner.world.tanks) {
+      if (tank.playerId === null) tank.alive = false;
+    }
+    advanceUntil(runner, () => runner.campaign.mission === 4);
+
+    const next = missionByNumber(4)!;
+    const declared = loadMission(next, { playerIds: ['a'] }).enemyRankByTankId.size;
+    expect(enemies(runner)).toBe(declared);
   });
 });

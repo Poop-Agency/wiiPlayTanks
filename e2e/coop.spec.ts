@@ -48,6 +48,17 @@ async function openClient(page: Page, room: string, name: string): Promise<void>
     await page.keyboard.press('Enter');
   }
 
+  // ⚠ `enemiesLeft > 0` ne suffit pas : une mission commence par une **annonce
+  // de trois secondes** pendant laquelle les ennemis sont déjà en place mais où
+  // la simulation est figée. Les tests qui mesuraient un déplacement juste après
+  // ce point tombaient donc dans un monde immobile, et lisaient zéro.
+  //
+  // Ils passaient tant que la machine était assez lente pour que l'annonce
+  // s'achève entre-temps — un test dont le résultat dépend de la vitesse de la
+  // machine ne vaut rien. On attend donc que le monde tourne vraiment.
+  await page.waitForFunction(() => window.__tanks?.campaign?.phase === 'playing', undefined, {
+    timeout: 15_000,
+  });
   await page.waitForFunction(() => (window.__tanks?.campaign?.enemiesLeft ?? 0) > 0, undefined, {
     timeout: 15_000,
   });

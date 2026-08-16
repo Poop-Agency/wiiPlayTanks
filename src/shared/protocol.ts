@@ -24,7 +24,7 @@ import type { Grid, InputCommand, TileKind, World } from '@core/state';
 import type { TankProfile } from '@core/systems/ai/profiles';
 import type { TankColor } from '@core/state';
 import type { Tuning } from '@core/tuning';
-import type { CampaignState } from './campaign';
+import type { CampaignSettings, CampaignState } from './campaign';
 import type { CampaignPhase } from './CampaignRunner';
 
 /** Version du protocole. Un client d'une autre version est refusé à la porte. */
@@ -69,6 +69,15 @@ export interface JoinMessage {
   room: string;
   /** Nom affiché dans le lobby. */
   name: string;
+  /**
+   * Réglages souhaités, **retenus uniquement si le salon est encore vierge**.
+   *
+   * C'est celui qui ouvre le salon qui choisit les règles ; qui rejoint ensuite
+   * les subit. L'alternative — laisser n'importe qui les changer en cours de
+   * route — ferait de la partie une cible mouvante, et la réserve de tanks est
+   * commune à tout le salon.
+   */
+  settings?: CampaignSettings;
 }
 
 /**
@@ -123,6 +132,16 @@ export interface LobbyMessage {
   room: string;
   players: LobbyPlayer[];
   started: boolean;
+  /** Règles retenues pour ce salon, affichées avant le départ. */
+  settings: CampaignSettings;
+}
+
+/** Prises d'un joueur, pour le tableau des scores. */
+export interface PlayerScore {
+  playerId: string;
+  name: string;
+  /** Ennemis détruits depuis le début de la partie. */
+  kills: number;
 }
 
 /**
@@ -161,6 +180,13 @@ export interface SnapshotMessage {
   /** Le monde, sans les tuiles. */
   world: WorldWithoutTiles;
   campaign: CampaignState;
+  /**
+   * Prises de chaque joueur du salon, sièges vides exclus.
+   *
+   * Dans l'instantané et non dans le message de salon : il change en cours de
+   * partie, et c'est justement pendant la partie qu'on veut le lire.
+   */
+  scores: PlayerScore[];
   /**
    * Où en est le cycle de mission.
    *

@@ -181,6 +181,22 @@ function drawLobby(ctx: CanvasRenderingContext2D, lobby: LobbyView): void {
     ctx.fillText('en attente…', width / 2 - 78, y);
   }
 
+  // Les règles du salon, sous la liste : elles sont choisies par celui qui
+  // l'ouvre, et personne d'autre ne doit les découvrir en pleine partie.
+  const rules: string[] = [
+    lobby.settings.bonusEveryMissions > 0
+      ? `tank bonus toutes les ${lobby.settings.bonusEveryMissions} missions`
+      : 'aucun tank bonus',
+    lobby.settings.respawnEnemiesOnRetry
+      ? 'ennemis rechargés à chaque tentative'
+      : 'les ennemis abattus ne reviennent pas',
+  ];
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = HUD.textDim;
+  ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(rules.join('  ·  '), width / 2, firstRow + lobby.maxPlayers * rowHeight + 12);
+
   if (lobby.error) {
     ctx.textAlign = 'center';
     ctx.fillStyle = HUD.bannerFailure;
@@ -299,6 +315,62 @@ function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
   return cut > 0 ? `${text.slice(0, cut)}…` : '';
 }
 
+/**
+ * Deuxième ligne de la bande supérieure, en co-op : qui a détruit combien.
+ *
+ * Elle remplace l'ancienne liste de coéquipiers, qui disait qui était là sans
+ * rien dire de la partie. Le classement porte la même information — un nom
+ * affiché est un joueur présent — et une de plus.
+ *
+ * Repli sur la liste des noms si le serveur n'a envoyé aucun score : un client
+ * plus récent que son serveur ne doit pas se retrouver avec une bande vide.
+ */
+function drawScoreboard(
+  ctx: CanvasRenderingContext2D,
+  view: CampaignView,
+  width: number,
+): void {
+  const baseline = BAND_HEIGHT - 11;
+
+  ctx.textAlign = 'left';
+  ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+
+  if (view.scores.length === 0) {
+    ctx.fillStyle = HUD.textDim;
+    ctx.fillText(`avec ${view.teammates.join(', ')}`, 14, baseline);
+    return;
+  }
+
+  let x = 14;
+
+  view.scores.forEach((entry, index) => {
+    if (index > 0) {
+      ctx.fillStyle = HUD.textDim;
+      ctx.fillText('·', x, baseline);
+      x += ctx.measureText('·').width + 6;
+    }
+
+    // Le joueur local ressort : c'est la seule ligne qu'on cherche du regard,
+    // et deux noms peuvent se ressembler.
+    const label = `${entry.name} ${entry.kills}`;
+    ctx.fillStyle = entry.you ? HUD.text : HUD.textDim;
+    ctx.font = entry.you
+      ? 'bold 11px ui-sans-serif, system-ui, sans-serif'
+      : '11px ui-sans-serif, system-ui, sans-serif';
+
+    // On s'arrête net plutôt que de déborder sur le bord : à quatre joueurs aux
+    // noms longs, la bande ne suffit pas.
+    const span = ctx.measureText(label).width;
+    if (x + span > width - 14) {
+      ctx.fillText('…', x, baseline);
+      return;
+    }
+
+    ctx.fillText(label, x, baseline);
+    x += span + 6;
+  });
+}
+
 /** Dessine le HUD par-dessus l'image de jeu. */
 export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void {
   if (view.lobby) {
@@ -380,12 +452,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void
   ctx.font = '13px ui-monospace, monospace';
   ctx.fillText(stats, statsStart, middle);
 
-  if (coop) {
-    ctx.fillStyle = HUD.textDim;
-    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`avec ${view.teammates.join(', ')}`, 14, BAND_HEIGHT - 11);
-  }
+  if (coop) drawScoreboard(ctx, view, width);
 
   /* ── Bandeau d'issue ───────────────────────────────────────────────── */
 

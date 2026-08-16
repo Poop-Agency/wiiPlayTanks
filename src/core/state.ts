@@ -157,6 +157,19 @@ export interface Tank {
 
   alive: boolean;
 
+  /**
+   * Ennemis détruits par ce tank **sur la mission en cours**.
+   *
+   * Seuls les tanks de l'IA comptent : ni le tir fratricide, ni le suicide.
+   * L'un et l'autre arrivent en co-op, et les compter — même en négatif —
+   * transformerait le tableau des scores en sujet de dispute plutôt qu'en
+   * repère.
+   *
+   * Remis à zéro à chaque mission, le monde étant reconstruit. Le cumul sur la
+   * campagne appartient à `CampaignRunner`, qui survit aux missions.
+   */
+  kills: number;
+
   /** Obus et mines de ce tank actuellement en jeu, pour faire respecter les quotas. */
   activeShells: number;
   activeMines: number;

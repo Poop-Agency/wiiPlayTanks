@@ -11,7 +11,8 @@
 
 import { TICK_RATE } from '@core/tick';
 import { TUNING } from '@core/tuning';
-import { CAMPAIGN_LENGTH } from '@shared/campaign';
+import { CAMPAIGN_LENGTH, DEFAULT_CAMPAIGN_SETTINGS } from '@shared/campaign';
+import type { CampaignSettings } from '@shared/campaign';
 import { exposeDebugBridge } from './debug-bridge';
 import type { RateProbe, TanksDebugBridge } from './debug-bridge';
 import { InputSampler } from './input/sampler';
@@ -40,6 +41,24 @@ function mountCanvas(): HTMLCanvasElement {
   const canvas = document.querySelector<HTMLCanvasElement>('#game');
   if (!canvas) throw new Error('Canevas #game introuvable dans index.html');
   return canvas;
+}
+
+/**
+ * Règles de salon demandées dans l'URL.
+ *
+ * Le serveur ne les retient que si le salon est vierge — voir `Room.join`. Les
+ * transmettre systématiquement est donc sans risque, et permet de repartager une
+ * URL qui décrit complètement la partie.
+ */
+function requestedSettings(params: URLSearchParams): CampaignSettings {
+  const bonus = Number(params.get('bonus'));
+
+  return {
+    bonusEveryMissions: Number.isInteger(bonus)
+      ? Math.max(bonus, 0)
+      : DEFAULT_CAMPAIGN_SETTINGS.bonusEveryMissions,
+    respawnEnemiesOnRetry: !params.has('persistant'),
+  };
 }
 
 /** Numéro de mission demandé dans l'URL, ramené dans les bornes de la campagne. */
@@ -102,6 +121,7 @@ function createSession(params: URLSearchParams): Session {
       playerId,
       room,
       name: params.get('nom') ?? `Joueur ${playerId.slice(0, 4)}`,
+      settings: requestedSettings(params),
       onMessage: (message) => network.handle(message),
       onClose: () => network.disconnected(),
     });

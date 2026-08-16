@@ -38,6 +38,26 @@ function circleOverlapsBox(
   return dx * dx + dy * dy < radius * radius;
 }
 
+/**
+ * Abat un tank, et crédite son auteur s'il y en a un.
+ *
+ * Le tableau des scores ne compte que les **ennemis** détruits : ni le tir
+ * fratricide, ni le suicide. L'un et l'autre arrivent en co-op, et les compter
+ * — même en négatif — ferait du tableau un sujet de dispute plutôt qu'un repère.
+ *
+ * @param killerId tireur ou poseur de mine, `null` si la mort n'a pas d'auteur
+ */
+export function killTank(world: World, victim: Tank, killerId: EntityId | null): void {
+  victim.alive = false;
+
+  if (killerId === null || killerId === victim.id) return;
+  // Un tank piloté par un joueur n'est pas une prise.
+  if (victim.playerId !== null) return;
+
+  const killer = world.tanks.find((tank) => tank.id === killerId);
+  if (killer) killer.kills++;
+}
+
 /** Un obus peut-il toucher ce tank ? */
 function canHit(shell: Shell, tank: Tank): boolean {
   if (!tank.alive) return false;
@@ -58,7 +78,7 @@ export function resolveShellTankHits(world: World, doomed: Set<EntityId>): void 
       if (!canHit(shell, tank)) continue;
 
       if (circleOverlapsBox(shell.x, shell.y, shellRadius, tank.x, tank.y, tankHalf)) {
-        tank.alive = false;
+        killTank(world, tank, shell.ownerId);
         doomed.add(shell.id);
         break;
       }

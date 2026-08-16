@@ -5,11 +5,18 @@ import { NEUTRAL_INPUT } from '../src/core/state.js';
 import { DT } from '../src/core/tick.js';
 import { TUNING } from '../src/core/tuning.js';
 import { hashWorld } from '../src/core/world.js';
+import { killTank } from '../src/core/systems/damage.js';
 import { Reconciler } from '../src/client/net/reconciler.js';
 import { Room } from '../src/server/Room.js';
 import type { Outgoing } from '../src/server/Room.js';
+import type { CampaignState } from '../src/shared/campaign.js';
 import { decode, encode, stripTiles, withTiles } from '../src/shared/protocol.js';
-import type { ClientMessage, ServerMessage, SnapshotMessage } from '../src/shared/protocol.js';
+import type {
+  ClientMessage,
+  LobbyMessage,
+  ServerMessage,
+  SnapshotMessage,
+} from '../src/shared/protocol.js';
 
 /**
  * Le co-op ne repose sur aucun code de gameplay nouveau — c'était tout l'objet
@@ -54,6 +61,30 @@ function openRoom(...playerIds: string[]): Room {
   room.start();
   skipTransitions(room);
   return room;
+}
+
+/** État de campagne tel que la salle le diffuse à un joueur. */
+function campaignOf(room: Room, playerId: string): CampaignState {
+  return snapshotsFor(room.broadcast(), playerId)[0]!.campaign;
+}
+
+/**
+ * Épuise la réserve : on tue le tank du joueur à chaque pas jusqu'à la fin.
+ *
+ * Passer par l'état plutôt que par un tir est délibéré — ce qui est mesuré ici
+ * est la reprise après une partie terminée, pas la façon dont on meurt.
+ */
+function loseEverything(room: Room, playerId: string, limit = 5000): void {
+  for (let step = 0; step < limit; step++) {
+    if (campaignOf(room, playerId).status !== 'playing') return;
+
+    const tank = room.world?.tanks.find((candidate) => candidate.playerId === playerId);
+    if (tank) tank.alive = false;
+
+    room.step();
+  }
+
+  throw new Error('la partie ne s\'est jamais terminée');
 }
 
 /** Fait tourner la salle jusqu'à ce que la simulation reparte. */
@@ -557,6 +588,39 @@ describe('résilience', () => {
     expect(room.tankIdOf('a')).toBe(tankId);
   });
 
+  test('une reconnexion accepte les intentions d\'un client reparti de zéro', () => {
+    // Le symptôme rapporté : après un plantage, on revient dans la partie et le
+    // tank refuse de bouger, l'écran donnant l'impression d'un rollback continu.
+    //
+    // La cause tenait au compteur d'intentions. Recharger la page crée une
+    // session neuve, qui repart de `seq = 0` ; la salle, elle, gardait l'accusé
+    // de la session précédente. Toute intention arrivait donc « déjà dépassée »
+    // et était jetée — et l'accusé périmé renvoyé au client lui faisait
+    // abandonner sa prédiction à chaque instantané, d'où le rollback.
+    // Un seul joueur : à deux, les sièges voisins se gênent et l'on mesurerait
+    // une collision entre tanks plutôt qu'un refus d'intention.
+    const room = openRoom('a');
+
+    for (let seq = 0; seq < 40; seq++) {
+      room.input('a', { t: 'input', seq, input: RIGHT });
+      room.step();
+    }
+
+    room.disconnect('a');
+    room.join('a', 'a');
+
+    const before = room.world!.tanks.find((tank) => tank.playerId === 'a')!.x;
+
+    for (let seq = 0; seq < 30; seq++) {
+      room.input('a', { t: 'input', seq, input: RIGHT });
+      room.step();
+    }
+
+    expect(room.world!.tanks.find((tank) => tank.playerId === 'a')!.x).toBeGreaterThan(
+      before + MOVEMENT_STEP_TILES * 20,
+    );
+  });
+
   test('un joueur qui arrive en cours de partie reçoit un tank', () => {
     const room = openRoom('a');
     for (let index = 0; index < 30; index++) room.step();
@@ -593,6 +657,55 @@ describe('lobby', () => {
     room.start();
 
     expect(room.world).toBe(world);
+  });
+
+  test('une partie terminée se relance', () => {
+    // Le symptôme rapporté : arrivé au bout de la réserve, plus rien ne
+    // repartait. Le client refusait d'émettre la demande parce que la partie
+    // était « déjà démarrée », et la salle l'aurait de toute façon ignorée pour
+    // la même raison — alors qu'une campagne terminée est précisément le cas où
+    // il faut pouvoir recommencer.
+    const room = openRoom('a');
+    loseEverything(room, 'a');
+    expect(campaignOf(room, 'a').status).toBe('gameOver');
+
+    room.start();
+    skipTransitions(room);
+
+    const campaign = campaignOf(room, 'a');
+    expect(campaign.status).toBe('playing');
+    expect(campaign.mission).toBe(1);
+    expect(room.world!.tanks.find((tank) => tank.playerId === 'a')?.alive).toBe(true);
+  });
+
+  test('l\'instantané porte le tableau des scores', () => {
+    const room = openRoom('a', 'b');
+    const killer = room.world!.tanks.find((tank) => tank.playerId === 'a')!;
+
+    for (const tank of room.world!.tanks) {
+      if (tank.playerId === null && tank.alive) killTank(room.world!, tank, killer.id);
+    }
+    room.step();
+
+    const scores = snapshotsFor(room.broadcast(), 'b')[0]!.scores;
+
+    // Diffusé à tout le monde, et pas seulement à celui qui marque : c'est un
+    // classement, il n'aurait aucun intérêt à n'être visible que de soi.
+    expect(scores.map((entry) => entry.playerId).sort()).toEqual(['a', 'b']);
+    expect(scores.find((entry) => entry.playerId === 'a')!.kills).toBeGreaterThan(0);
+    expect(scores.find((entry) => entry.playerId === 'b')!.kills).toBe(0);
+  });
+
+  test('les règles du salon sont celles de son créateur', () => {
+    const room = new Room('essai');
+    room.join('a', 'A', { bonusEveryMissions: 0, respawnEnemiesOnRetry: false });
+    // Le second arrivant ne redéfinit rien : il joue aux règles déjà en place.
+    room.join('b', 'B', { bonusEveryMissions: 9, respawnEnemiesOnRetry: true });
+
+    const outgoing = room.join('c', 'C');
+    const lobby = outgoing.find((entry) => entry.message.t === 'lobby')!.message as LobbyMessage;
+
+    expect(lobby.settings).toEqual({ bonusEveryMissions: 0, respawnEnemiesOnRetry: false });
   });
 
   test('un message de type inconnu est simplement ignoré', () => {

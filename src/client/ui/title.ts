@@ -13,7 +13,7 @@
  * code de plus, exercé une fois par partie, pour un résultat identique.
  */
 
-import { CAMPAIGN_LENGTH } from '@shared/campaign';
+import { CAMPAIGN_LENGTH, DEFAULT_CAMPAIGN_SETTINGS } from '@shared/campaign';
 import { hasTouchScreen } from '../input/touch';
 
 /**
@@ -136,14 +136,56 @@ function coopSection(): HTMLElement {
   join.type = 'button';
   join.className = 'principal';
   join.textContent = 'Rejoindre';
+
+  /* ── Règles ────────────────────────────────────────────────────────────
+   *
+   * Elles ne s'appliquent qu'à la **création** du salon : qui rejoint ensuite
+   * joue aux règles déjà en place, et le salon d'attente les affiche pour que
+   * personne ne les découvre en pleine partie.
+   */
+
+  const options = document.createElement('div');
+  options.className = 'ecran-titre-ligne';
+
+  const bonusLabel = document.createElement('label');
+  bonusLabel.textContent = 'tank bonus toutes les ';
+
+  const bonus = document.createElement('input');
+  bonus.type = 'number';
+  bonus.min = '0';
+  bonus.max = '50';
+  bonus.value = String(DEFAULT_CAMPAIGN_SETTINGS.bonusEveryMissions);
+  bonus.setAttribute('aria-label', 'Périodicité du tank bonus, 0 pour aucun');
+
+  const bonusSuffix = document.createElement('span');
+  bonusSuffix.textContent = ' missions (0 = aucun)';
+
+  bonusLabel.append(bonus, bonusSuffix);
+
+  const persistLabel = document.createElement('label');
+
+  const persist = document.createElement('input');
+  persist.type = 'checkbox';
+  persist.checked = !DEFAULT_CAMPAIGN_SETTINGS.respawnEnemiesOnRetry;
+
+  persistLabel.append(persist, document.createTextNode(' les ennemis abattus ne reviennent pas'));
+
+  options.append(bonusLabel, persistLabel);
+
   join.addEventListener('click', () => {
     const search = new URLSearchParams({ enligne: '1', salon: room.value || 'principal' });
     if (name.value) search.set('nom', name.value);
+
+    // Toujours transmis, y compris aux valeurs d'origine : l'URL décrit alors
+    // complètement la partie, et se repartage telle quelle.
+    search.set('bonus', bonus.value || '0');
+    if (persist.checked) search.set('persistant', '1');
+
     go(search);
   });
 
   row.append(room, name, join);
-  section.append(row);
+  section.append(row, options);
 
   return section;
 }

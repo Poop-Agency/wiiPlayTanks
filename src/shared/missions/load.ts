@@ -29,12 +29,28 @@ export interface LoadMissionOptions {
    * comportements reproductibles d'une tentative à l'autre.
    */
   seed?: number;
+  /**
+   * Rangs, dans la liste d'ennemis de la mission, de ceux qu'il ne faut pas
+   * réinstaller.
+   *
+   * Sert à la variante « les ennemis abattus ne reviennent pas » : on recharge
+   * la même arène en sautant ceux déjà détruits, ce qui fait de chaque tentative
+   * un progrès. Le rang plutôt que l'identifiant, parce que les identifiants
+   * d'entités sont réattribués à chaque chargement.
+   */
+  skipEnemies?: ReadonlySet<number>;
 }
 
 export interface LoadedMission {
   world: World;
   /** Tanks des joueurs, dans l'ordre de `playerIds`. */
   playerTankIds: EntityId[];
+  /**
+   * Rang dans la liste d'ennemis de la mission, pour chaque tank ennemi
+   * installé. C'est ce qui permet de retenir *lesquels* ont été abattus, et non
+   * seulement combien.
+   */
+  enemyRankByTankId: ReadonlyMap<EntityId, number>;
 }
 
 /**
@@ -120,7 +136,7 @@ function isCrowded(candidate: SpawnPoint, taken: readonly SpawnPoint[]): boolean
 
 /** Instancie le terrain, les joueurs et les ennemis d'une mission. */
 export function loadMission(mission: Mission, options: LoadMissionOptions): LoadedMission {
-  const { playerIds, seed = mission.id } = options;
+  const { playerIds, seed = mission.id, skipEnemies } = options;
   const parsed = parseMission(mission.grid);
 
   const playerSpawns = deriveSpawns(parsed.grid, parsed.playerSpawns, playerIds.length);
@@ -151,9 +167,17 @@ export function loadMission(mission: Mission, options: LoadMissionOptions): Load
   // Les ennemis après les joueurs : l'ordre de création fixe les identifiants,
   // et donc l'ordre de résolution des cas simultanés. Le figer ici garantit que
   // deux exécutions de la même mission se déroulent à l'identique.
-  for (const enemy of parsed.enemySpawns) {
-    createTank(world, { color: enemy.color, x: enemy.x, y: enemy.y });
-  }
+  //
+  // Sauter un ennemi ne décale pas les rangs de ceux qui restent : c'est
+  // l'index dans `enemySpawns` qui fait foi, pas l'ordre de création. Sans quoi
+  // la mémoire d'une tentative désignerait quelqu'un d'autre à la suivante.
+  const enemyRankByTankId = new Map<EntityId, number>();
 
-  return { world, playerTankIds };
+  parsed.enemySpawns.forEach((enemy, rank) => {
+    if (skipEnemies?.has(rank)) return;
+    const tank = createTank(world, { color: enemy.color, x: enemy.x, y: enemy.y });
+    enemyRankByTankId.set(tank.id, rank);
+  });
+
+  return { world, playerTankIds, enemyRankByTankId };
 }
