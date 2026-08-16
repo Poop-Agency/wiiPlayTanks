@@ -78,6 +78,14 @@ export class CampaignRunner {
   readonly #playerIds: string[];
 
   /**
+   * Joueurs inscrits pour la mission suivante, pas encore installés.
+   *
+   * Vidé dans {@link CampaignRunner.#openMission}, seul endroit où l'on peut
+   * leur donner un point de départ valide.
+   */
+  readonly #joiningPlayerIds: string[] = [];
+
+  /**
    * Pas restants avant de charger la mission suivante.
    *
    * Un décompte plutôt qu'une date : la transition reste ainsi indépendante de
@@ -191,21 +199,27 @@ export class CampaignRunner {
   }
 
   /**
-   * Installe un joueur en cours de partie.
+   * Inscrit un joueur pour la **mission suivante**.
    *
-   * Le co-op se joue en arrivée libre : un nouveau venu reçoit un tank tout de
-   * suite plutôt que d'attendre la mission suivante. S'il était déjà là, on ne
-   * fait que rendre son siège.
+   * Il n'entre pas en jeu tout de suite, et c'est délibéré : les positions de
+   * départ appartiennent à la mission, donc installer un tank en cours de route
+   * suppose de rouvrir l'arène — ce qui replacerait tout le monde et effacerait
+   * le combat en cours. Une version antérieure faisait exactement ça sous le nom
+   * d'« arrivée libre ».
+   *
+   * L'inscription est idempotente : un joueur déjà en place ou déjà inscrit ne
+   * compte pas deux fois.
    */
-  addPlayer(playerId: string): EntityId | undefined {
-    const existing = this.#tankByPlayer.get(playerId);
-    if (existing !== undefined) return existing;
+  enqueuePlayer(playerId: string): void {
+    if (this.#playerIds.includes(playerId)) return;
+    if (this.#joiningPlayerIds.includes(playerId)) return;
 
-    this.#playerIds.push(playerId);
-    // Rouvrir la mission est le seul moyen d'obtenir un point de départ valide
-    // et un monde cohérent : les positions de départ appartiennent à la mission.
-    this.#world = this.#openMission();
-    return this.#tankByPlayer.get(playerId);
+    this.#joiningPlayerIds.push(playerId);
+  }
+
+  /** Joueurs inscrits, qui entreront à la prochaine mission. */
+  get joiningPlayerIds(): readonly string[] {
+    return this.#joiningPlayerIds;
   }
 
   /** Retire un joueur et son tank. Les autres et l'IA continuent sans interruption. */
@@ -360,6 +374,11 @@ export class CampaignRunner {
   /** Charge la mission courante dans un monde neuf. */
   #openMission(): World {
     this.#foldKills();
+
+    // Les inscrits prennent leur siège ici, et nulle part ailleurs : c'est le
+    // seul moment où l'on dispose d'un point de départ valide pour eux.
+    this.#playerIds.push(...this.#joiningPlayerIds);
+    this.#joiningPlayerIds.length = 0;
 
     const mission = missionByNumber(this.#state.mission);
     if (!mission) throw new Error(`Mission ${this.#state.mission} inexistante`);

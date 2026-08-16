@@ -63,6 +63,11 @@ function openRoom(...playerIds: string[]): Room {
   return room;
 }
 
+/** Message de salon contenu dans un envoi. */
+function lobbyOf(outgoing: Outgoing[]): LobbyMessage {
+  return outgoing.find((entry) => entry.message.t === 'lobby')!.message as LobbyMessage;
+}
+
 /** État de campagne tel que la salle le diffuse à un joueur. */
 function campaignOf(room: Room, playerId: string): CampaignState {
   return snapshotsFor(room.broadcast(), playerId)[0]!.campaign;
@@ -621,11 +626,15 @@ describe('résilience', () => {
     );
   });
 
-  test('un joueur qui arrive en cours de partie reçoit un tank', () => {
-    const room = openRoom('a');
-    for (let index = 0; index < 30; index++) room.step();
-
+  test('un joueur qui arrive avant le départ prend son siège', () => {
+    // Le pendant du test de spectateur : tant que rien n'est lancé, on entre
+    // normalement. C'est seulement une partie **commencée** qu'on ne rejoint pas.
+    const room = new Room('essai');
+    room.join('a', 'a');
     room.join('c', 'c');
+    room.start();
+    skipTransitions(room);
+
     expect(room.tankIdOf('c')).toBeDefined();
     expect(room.world!.tanks.filter((tank) => tank.playerId !== null)).toHaveLength(2);
   });
@@ -696,16 +705,62 @@ describe('lobby', () => {
     expect(scores.find((entry) => entry.playerId === 'b')!.kills).toBe(0);
   });
 
-  test('les règles du salon sont celles de son créateur', () => {
+  test('n\'importe quel joueur du salon règle la partie, jusqu\'au départ', () => {
     const room = new Room('essai');
-    room.join('a', 'A', { bonusEveryMissions: 0, respawnEnemiesOnRetry: false });
-    // Le second arrivant ne redéfinit rien : il joue aux règles déjà en place.
-    room.join('b', 'B', { bonusEveryMissions: 9, respawnEnemiesOnRetry: true });
+    room.join('a', 'A');
+    room.join('b', 'B');
 
-    const outgoing = room.join('c', 'C');
-    const lobby = outgoing.find((entry) => entry.message.t === 'lobby')!.message as LobbyMessage;
+    const chosen = { bonusEveryMissions: 0, respawnEnemiesOnRetry: false };
+    // Le second arrivant y a droit autant que le premier : le salon est un
+    // espace de confiance, et désigner un hôte obligerait à en désigner un
+    // nouveau à chaque déconnexion.
+    room.configure('b', chosen);
+    expect(lobbyOf(room.join('c', 'C')).settings).toEqual(chosen);
 
-    expect(lobby.settings).toEqual({ bonusEveryMissions: 0, respawnEnemiesOnRetry: false });
+    // Un inconnu, lui, n'a rien à dire.
+    room.configure('inconnu', { bonusEveryMissions: 9, respawnEnemiesOnRetry: true });
+    expect(lobbyOf(room.join('c', 'C')).settings).toEqual(chosen);
+
+    // Et une fois la partie lancée, plus personne : la réserve est commune, et
+    // changer les règles en route ferait de la partie une cible mouvante.
+    room.start();
+    room.configure('a', { bonusEveryMissions: 9, respawnEnemiesOnRetry: true });
+    expect(lobbyOf(room.join('c', 'C')).settings).toEqual(chosen);
+  });
+
+  test('qui arrive après le départ regarde, jusqu\'à ce qu\'on le fasse entrer', () => {
+    const room = openRoom('a');
+    const seated = () => room.world!.tanks.filter((tank) => tank.playerId !== null).length;
+    expect(seated()).toBe(1);
+
+    room.join('b', 'B');
+
+    // Il est là, mais sans tank : installer le sien rouvrirait l'arène et
+    // replacerait tout le monde en plein combat.
+    expect(seated()).toBe(1);
+    expect(room.tankIdOf('b')).toBeUndefined();
+
+    const waiting = snapshotsFor(room.broadcast(), 'a')[0]!.spectators;
+    expect(waiting.map((player) => player.playerId)).toEqual(['b']);
+
+    // Un spectateur ne s'accepte pas lui-même, sinon la règle ne servirait à rien.
+    room.admit('b', 'b');
+    expect(room.tankIdOf('b')).toBeUndefined();
+
+    room.admit('a', 'b');
+    // L'entrée prend effet à la mission suivante, pas sur-le-champ.
+    expect(seated()).toBe(1);
+
+    for (const tank of room.world!.tanks) {
+      if (tank.playerId === null) tank.alive = false;
+    }
+    for (let step = 0; step < 60 * 12; step++) {
+      room.step();
+      if (room.tankIdOf('b') !== undefined) break;
+    }
+
+    expect(room.tankIdOf('b')).toBeDefined();
+    expect(snapshotsFor(room.broadcast(), 'a')[0]!.spectators).toHaveLength(0);
   });
 
   test('un message de type inconnu est simplement ignoré', () => {

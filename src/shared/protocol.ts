@@ -69,15 +69,32 @@ export interface JoinMessage {
   room: string;
   /** Nom affiché dans le lobby. */
   name: string;
-  /**
-   * Réglages souhaités, **retenus uniquement si le salon est encore vierge**.
-   *
-   * C'est celui qui ouvre le salon qui choisit les règles ; qui rejoint ensuite
-   * les subit. L'alternative — laisser n'importe qui les changer en cours de
-   * route — ferait de la partie une cible mouvante, et la réserve de tanks est
-   * commune à tout le salon.
-   */
-  settings?: CampaignSettings;
+}
+
+/**
+ * Changement de règles, depuis le salon d'attente.
+ *
+ * N'importe quel joueur du salon peut l'émettre, et le serveur l'ignore une fois
+ * la partie lancée : la réserve de tanks est commune, changer les règles en
+ * cours de route ferait de la partie une cible mouvante.
+ */
+export interface SettingsMessage {
+  t: 'settings';
+  settings: CampaignSettings;
+}
+
+/**
+ * Fait entrer un spectateur.
+ *
+ * Émis par un joueur déjà en place — un spectateur ne s'accepte pas lui-même.
+ * L'entrée prend effet à la mission suivante : installer un tank au milieu d'un
+ * combat déplacerait tout le monde, la position de départ appartenant à la
+ * mission.
+ */
+export interface AdmitMessage {
+  t: 'admit';
+  /** Spectateur à faire entrer. */
+  playerId: string;
 }
 
 /**
@@ -98,7 +115,12 @@ export interface StartMessage {
   t: 'start';
 }
 
-export type ClientMessage = JoinMessage | InputMessage | StartMessage;
+export type ClientMessage =
+  | JoinMessage
+  | InputMessage
+  | StartMessage
+  | SettingsMessage
+  | AdmitMessage;
 
 /* ── Serveur → client ───────────────────────────────────────────────────── */
 
@@ -125,6 +147,13 @@ export interface LobbyPlayer {
   playerId: string;
   name: string;
   connected: boolean;
+  /**
+   * Présent sans tank : il a rejoint une partie déjà lancée.
+   *
+   * On ne s'installe pas au milieu d'un combat — il regarde jusqu'à ce qu'un
+   * joueur en place le fasse entrer, ou qu'une nouvelle campagne commence.
+   */
+  spectator: boolean;
 }
 
 export interface LobbyMessage {
@@ -187,6 +216,13 @@ export interface SnapshotMessage {
    * partie, et c'est justement pendant la partie qu'on veut le lire.
    */
   scores: PlayerScore[];
+  /**
+   * Spectateurs en attente d'être acceptés.
+   *
+   * Dans l'instantané et non dans le message de salon : ils arrivent pendant la
+   * partie, et c'est en jouant qu'on doit pouvoir les faire entrer.
+   */
+  spectators: LobbyPlayer[];
   /**
    * Où en est le cycle de mission.
    *

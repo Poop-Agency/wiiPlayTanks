@@ -6,7 +6,6 @@
  * testable en lui donnant un transport factice.
  */
 
-import type { CampaignSettings } from '@shared/campaign';
 import { PROTOCOL_VERSION, decode, encode } from '@shared/protocol';
 import type { ClientMessage, ServerMessage } from '@shared/protocol';
 
@@ -22,8 +21,6 @@ export interface ConnectionOptions {
   playerId: string;
   name: string;
   room: string;
-  /** Règles souhaitées, retenues seulement si ce salon est encore vierge. */
-  settings?: CampaignSettings;
   onMessage(message: ServerMessage): void;
   onOpen?(): void;
   onClose?(): void;
@@ -90,7 +87,6 @@ export class Connection implements Transport {
         version: PROTOCOL_VERSION,
         room: options.room,
         name: options.name,
-        ...(options.settings ? { settings: options.settings } : {}),
       });
       options.onOpen?.();
     });

@@ -24,13 +24,11 @@ type Page = import('@playwright/test').Page;
 const SERVER = 'http://localhost:3000';
 
 /**
- * Ouvre un client dans une salle donnée, démarre la partie si elle attend
- * encore, et attend la première réception.
+ * Ouvre un client dans une salle et attend sa première réception.
  *
- * Le salon (#lobby-coop) n'a plus de départ automatique : le premier arrivant
- * doit appuyer sur Entrée. Un arrivant suivant peut trouver la partie déjà
- * lancée — l'arrivée libre en cours de partie a son propre comportement — et
- * n'a alors rien à démarrer.
+ * Ne démarre rien : c'est `startGame` qui le fait, et la distinction compte
+ * depuis qu'une partie commencée ne se rejoint plus. Deux joueurs qui veulent
+ * jouer ensemble doivent donc être entrés **avant** le départ.
  */
 async function openClient(page: Page, room: string, name: string): Promise<void> {
   await page.goto(`${SERVER}/?enligne=1&salon=${room}&nom=${name}`);
@@ -42,26 +40,52 @@ async function openClient(page: Page, room: string, name: string): Promise<void>
     undefined,
     { timeout: 10_000 },
   );
+}
 
+/**
+ * Lance la partie depuis le salon, et attend qu'elle tourne vraiment.
+ *
+ * ⚠ `enemiesLeft > 0` ne suffit pas : une mission commence par une **annonce de
+ * trois secondes** pendant laquelle les ennemis sont déjà en place mais où la
+ * simulation est figée. Les tests qui mesuraient un déplacement juste après ce
+ * point tombaient dans un monde immobile et lisaient zéro. Ils passaient tant
+ * que la machine était assez lente pour que l'annonce s'achève entre-temps — un
+ * test dont le résultat dépend de la vitesse de la machine ne vaut rien.
+ */
+async function startGame(page: Page): Promise<void> {
   if (await page.evaluate(() => window.__tanks?.campaign?.lobby !== undefined)) {
     await page.bringToFront();
     await page.keyboard.press('Enter');
   }
 
-  // ⚠ `enemiesLeft > 0` ne suffit pas : une mission commence par une **annonce
-  // de trois secondes** pendant laquelle les ennemis sont déjà en place mais où
-  // la simulation est figée. Les tests qui mesuraient un déplacement juste après
-  // ce point tombaient donc dans un monde immobile, et lisaient zéro.
-  //
-  // Ils passaient tant que la machine était assez lente pour que l'annonce
-  // s'achève entre-temps — un test dont le résultat dépend de la vitesse de la
-  // machine ne vaut rien. On attend donc que le monde tourne vraiment.
+  await waitPlaying(page);
+}
+
+/** Attend que la simulation tourne — ni salon, ni annonce de mission. */
+async function waitPlaying(page: Page): Promise<void> {
   await page.waitForFunction(() => window.__tanks?.campaign?.phase === 'playing', undefined, {
     timeout: 15_000,
   });
   await page.waitForFunction(() => (window.__tanks?.campaign?.enemiesLeft ?? 0) > 0, undefined, {
     timeout: 15_000,
   });
+}
+
+/**
+ * Deux clients assis dans la même partie.
+ *
+ * Ils entrent **tous les deux avant le départ** : une partie commencée ne se
+ * rejoint plus, le retardataire devient spectateur.
+ */
+async function openSeatedPair(
+  alpha: Page,
+  beta: Page,
+  room: string,
+): Promise<void> {
+  await openClient(alpha, room, 'Alpha');
+  await openClient(beta, room, 'Beta');
+  await startGame(alpha);
+  await waitPlaying(beta);
 }
 
 /** Positions des tanks de joueurs, telles que cette page les connaît. */
@@ -120,8 +144,7 @@ test('deux joueurs partagent la même partie', async ({ browser }) => {
   const alpha = await browser.newPage();
   const beta = await browser.newPage();
 
-  await openClient(alpha, room, 'Alpha');
-  await openClient(beta, room, 'Beta');
+  await openSeatedPair(alpha, beta, room);
 
   // Chacun voit l'autre dans son HUD.
   await expect
@@ -148,8 +171,7 @@ test('le déplacement d\'un joueur est vu par l\'autre', async ({ browser }) => 
   const alpha = await browser.newPage();
   const beta = await browser.newPage();
 
-  await openClient(alpha, room, 'Alpha');
-  await openClient(beta, room, 'Beta');
+  await openSeatedPair(alpha, beta, room);
   await alpha.bringToFront();
 
   const before = (await playerTanks(beta))[0]!;
@@ -177,6 +199,7 @@ test('le tank local répond immédiatement, sans attendre le serveur', async ({ 
   const room = uniqueRoom();
   const alpha = await browser.newPage();
   await openClient(alpha, room, 'Alpha');
+  await startGame(alpha);
   await alpha.bringToFront();
 
   // Trois images après l'appui : sans prédiction locale, il ne se serait encore
@@ -209,8 +232,7 @@ test('la déconnexion d\'un joueur ne perturbe ni l\'IA ni les autres', async ({
   const alpha = await browser.newPage();
   const beta = await browser.newPage();
 
-  await openClient(alpha, room, 'Alpha');
-  await openClient(beta, room, 'Beta');
+  await openSeatedPair(alpha, beta, room);
   await beta.bringToFront();
 
   const enemiesBefore = await beta.evaluate(() => window.__tanks!.campaign!.enemiesLeft);
@@ -243,10 +265,50 @@ test('deux salons différents ne se mélangent pas', async ({ browser }) => {
 
   await openClient(alpha, uniqueRoom(), 'Alpha');
   await openClient(beta, uniqueRoom(), 'Beta');
+  await startGame(alpha);
+  await startGame(beta);
 
   expect(await alpha.evaluate(() => window.__tanks?.campaign?.teammates)).toEqual([]);
   expect(await playerTanks(alpha)).toHaveLength(1);
   expect(await playerTanks(beta)).toHaveLength(1);
+
+  await alpha.close();
+  await beta.close();
+});
+
+test('un arrivant en cours de partie regarde, puis entre quand on l\'accepte', async ({
+  browser,
+}) => {
+  const room = uniqueRoom();
+  const alpha = await browser.newPage();
+  const beta = await browser.newPage();
+
+  await openClient(alpha, room, 'Alpha');
+  await startGame(alpha);
+
+  // Beta arrive après le départ : il n'a pas de tank, et il le sait.
+  await openClient(beta, room, 'Beta');
+  await expect.poll(() => beta.evaluate(() => window.__tanks?.campaign?.spectating)).toBe(true);
+  expect(await playerTanks(beta)).toHaveLength(1);
+
+  // Alpha, lui, le voit attendre — et c'est à lui de décider.
+  await expect
+    .poll(() => alpha.evaluate(() => window.__tanks?.campaign?.spectators?.map((p) => p.name)))
+    .toEqual(['Beta']);
+
+  const admit = alpha.locator('.salon-attente-ligne button');
+  await expect(admit).toBeVisible();
+  await admit.click();
+
+  // Le siège lui est accordé : il n'est plus spectateur, et l'invite disparaît
+  // de l'écran d'Alpha.
+  //
+  // Le test s'arrête ici volontairement. L'installation effective a lieu au
+  // chargement de la mission suivante, et l'atteindre depuis un navigateur
+  // supposerait de nettoyer une arène au jugé — long, et surtout dépendant de
+  // l'adresse au tir. C'est un test unitaire dans `netcode.test.ts`.
+  await expect.poll(() => beta.evaluate(() => window.__tanks?.campaign?.spectating)).toBe(false);
+  await expect(admit).toHaveCount(0);
 
   await alpha.close();
   await beta.close();

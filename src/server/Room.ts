@@ -65,6 +65,16 @@ interface Player {
   playerId: string;
   name: string;
   connected: boolean;
+  /**
+   * Présent sans tank, parce qu'il est arrivé après le départ.
+   *
+   * Le co-op se jouait en arrivée libre : un nouveau venu recevait un tank sur
+   *-le-champ, ce qui obligeait à rouvrir l'arène et replaçait donc **tout le
+   * monde** au milieu du combat en cours. On regarde désormais, et l'on entre
+   * quand un joueur en place le décide — ou quand une nouvelle campagne
+   * commence.
+   */
+  spectator: boolean;
   /** Intentions reçues et pas encore appliquées, dans l'ordre d'arrivée. */
   pending: InputMessage[];
   /** Dernière intention appliquée, rejouée si le tampon se vide. */
@@ -141,16 +151,8 @@ export class Room {
    * Un identifiant déjà connu **reprend son siège** : c'est ce qui rend une
    * reconnexion transparente après une coupure passagère.
    */
-  join(playerId: string, name: string, settings?: CampaignSettings): Outgoing[] {
+  join(playerId: string, name: string): Outgoing[] {
     const existing = this.#players.get(playerId);
-
-    // Les règles se fixent à l'ouverture du salon, et là seulement : une fois
-    // qu'un joueur est installé, les changer sous lui reviendrait à modifier la
-    // partie qu'il a rejointe. La réserve de tanks étant commune, ça ne
-    // concernerait d'ailleurs pas que lui.
-    if (settings && this.#players.size === 0 && !this.#started) {
-      this.#settings = settings;
-    }
 
     // Un siège se garde à la reconnexion (`existing`), mais un salon plein
     // refuse un nouveau venu : au-delà, `PLAYER_SEAT_COLORS` n'a plus de
@@ -185,18 +187,19 @@ export class Room {
       existing.pending.length = 0;
       existing.lastApplied = NEUTRAL_INPUT;
     } else {
+      // On ne rejoint pas une partie commencée : le nouveau venu s'installe
+      // comme spectateur, et un joueur en place le fera entrer quand il le
+      // jugera bon. Avant le départ, en revanche, il prend son siège aussitôt.
       this.#players.set(playerId, {
         playerId,
         name,
         connected: true,
+        spectator: this.#started,
         pending: [],
         lastApplied: NEUTRAL_INPUT,
         ack: -1,
         disconnectedAtTick: null,
       });
-      // Arrivée libre : un nouveau venu reçoit un tank tout de suite plutôt que
-      // d'attendre la mission suivante.
-      this.#runner?.addPlayer(playerId);
     }
 
     // Le terrain devra être renvoyé : le client n'en a aucun.
@@ -265,7 +268,50 @@ export class Room {
     const runner = this.#runner;
     if (!runner || runner.campaign.status === 'playing') return [];
 
+    // Une nouvelle campagne n'est plus « une partie commencée » : les
+    // spectateurs y entrent sans avoir à demander, et sans déranger personne.
+    for (const player of this.#players.values()) {
+      if (!player.spectator) continue;
+      player.spectator = false;
+      runner.enqueuePlayer(player.playerId);
+    }
+
     runner.restart();
+    return [this.#lobbyMessage()];
+  }
+
+  /**
+   * Change les règles du salon. Sans effet une fois la partie lancée.
+   *
+   * N'importe quel joueur présent peut le faire : le salon est un espace de
+   * confiance, et exiger un hôte obligerait à en désigner un nouveau à chaque
+   * déconnexion.
+   */
+  configure(playerId: string, settings: CampaignSettings): Outgoing[] {
+    if (this.#started) return [];
+    if (!this.#players.has(playerId)) return [];
+
+    this.#settings = settings;
+    return [this.#lobbyMessage()];
+  }
+
+  /**
+   * Fait entrer un spectateur, à la demande d'un joueur en place.
+   *
+   * Un spectateur ne s'accepte pas lui-même — sinon la règle ne servirait à
+   * rien. L'entrée n'a lieu qu'à la mission suivante : voir
+   * `CampaignRunner.enqueuePlayer`.
+   */
+  admit(requesterId: string, targetId: string): Outgoing[] {
+    const requester = this.#players.get(requesterId);
+    if (!requester || requester.spectator) return [];
+
+    const target = this.#players.get(targetId);
+    if (!target || !target.spectator) return [];
+
+    target.spectator = false;
+    this.#runner?.enqueuePlayer(targetId);
+
     return [this.#lobbyMessage()];
   }
 
@@ -361,6 +407,9 @@ export class Room {
     const messages: Outgoing[] = [];
     const partial = stripTiles(world);
     const scores = this.#scoreboard(runner);
+    const spectators = [...this.#players.values()]
+      .filter((player) => player.spectator)
+      .map((player) => this.#describe(player));
 
     for (const player of this.#players.values()) {
       if (!player.connected) continue;
@@ -387,6 +436,7 @@ export class Room {
         world: partial,
         campaign: runner.campaign,
         scores,
+        spectators,
         phase: runner.phase,
       };
 
@@ -401,12 +451,20 @@ export class Room {
     return this.#runner?.tankIdOf(playerId);
   }
 
-  #lobbyMessage(): Outgoing {
-    const players: LobbyPlayer[] = [...this.#players.values()].map((player) => ({
+  /** Un joueur, tel que le salon et le HUD l'affichent. */
+  #describe(player: Player): LobbyPlayer {
+    return {
       playerId: player.playerId,
       name: player.name,
       connected: player.connected,
-    }));
+      spectator: player.spectator,
+    };
+  }
+
+  #lobbyMessage(): Outgoing {
+    const players: LobbyPlayer[] = [...this.#players.values()].map((player) =>
+      this.#describe(player),
+    );
 
     return {
       to: null,
@@ -420,14 +478,16 @@ export class Room {
     };
   }
 
-  /** Prises de chaque joueur, dans l'ordre des sièges. */
+  /** Prises de chaque joueur assis, dans l'ordre des sièges. */
   #scoreboard(runner: CampaignRunner): PlayerScore[] {
     const scores = runner.scores;
 
-    return [...this.#players.values()].map((player) => ({
-      playerId: player.playerId,
-      name: player.name,
-      kills: scores.get(player.playerId) ?? 0,
-    }));
+    return [...this.#players.values()]
+      .filter((player) => !player.spectator)
+      .map((player) => ({
+        playerId: player.playerId,
+        name: player.name,
+        kills: scores.get(player.playerId) ?? 0,
+      }));
   }
 }

@@ -79,6 +79,17 @@ export interface CampaignView {
    */
   scores: Array<{ name: string; kills: number; you: boolean }>;
 
+  /**
+   * Spectateurs en attente d'être acceptés, en co-op. Vide en solo.
+   *
+   * Un joueur en place peut les faire entrer ; eux-mêmes s'y voient et
+   * comprennent pourquoi ils n'ont pas de tank.
+   */
+  spectators: LobbyPlayer[];
+
+  /** Le joueur local regarde-t-il sans jouer ? */
+  spectating: boolean;
+
   /** Présent tant que la partie n'a pas démarré ; absent sinon (et toujours en solo). */
   lobby?: LobbyView;
 
@@ -106,6 +117,8 @@ export function buildCampaignView(
   teammates: string[] = [],
   phase: CampaignPhase = 'playing',
   scores: CampaignView['scores'] = [],
+  spectators: LobbyPlayer[] = [],
+  spectating = false,
 ): CampaignView {
   const mission = missionByNumber(state.mission);
 
@@ -129,6 +142,8 @@ export function buildCampaignView(
 
     teammates,
     scores,
+    spectators,
+    spectating,
     phase,
   };
 }
@@ -150,6 +165,18 @@ export interface Session {
    * le terrain d'essai n'a ni mission, ni réserve, ni progression.
    */
   status(): CampaignView | null;
+
+  /**
+   * Change les règles du salon. Absent hors du co-op, où la notion n'existe pas.
+   *
+   * Facultatif plutôt qu'imposé à toutes les sessions : la campagne solo et le
+   * terrain d'essai n'ont pas de salon, et leur faire porter une méthode vide
+   * inviterait à les traiter comme s'ils en avaient un.
+   */
+  configure?(settings: CampaignSettings): void;
+
+  /** Fait entrer un spectateur. Absent hors du co-op. */
+  admit?(playerId: string): void;
 
   /** Repart de zéro. Sans effet là où ça n'a pas de sens. */
   restart(): void;

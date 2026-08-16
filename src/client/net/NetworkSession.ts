@@ -98,6 +98,7 @@ export class NetworkSession implements Session {
   #phase: CampaignPhase = 'playing';
   #players: LobbyPlayer[] = [];
   #scores: PlayerScore[] = [];
+  #spectators: LobbyPlayer[] = [];
   #settings: CampaignSettings = DEFAULT_CAMPAIGN_SETTINGS;
   #started = false;
   #room = '';
@@ -201,6 +202,8 @@ export class NetworkSession implements Session {
       };
     }
 
+    const spectating = this.#spectators.some((player) => player.playerId === this.#playerId);
+
     return buildCampaignView(
       this.#campaign,
       this.world,
@@ -208,7 +211,19 @@ export class NetworkSession implements Session {
       teammates,
       this.#phase,
       scores,
+      this.#spectators,
+      spectating,
     );
+  }
+
+  /** Fait entrer un spectateur. Sans effet si le serveur refuse. */
+  admit(playerId: string): void {
+    this.#transport.send({ t: 'admit', playerId });
+  }
+
+  /** Change les règles du salon. Ignoré par le serveur une fois la partie lancée. */
+  configure(settings: CampaignSettings): void {
+    this.#transport.send({ t: 'settings', settings });
   }
 
   /**
@@ -286,6 +301,7 @@ export class NetworkSession implements Session {
     // à chaque image et la boucle de rendu mourrait — le jeu se fige, ce qui ne
     // ressemble en rien à sa cause.
     this.#scores = message.scores ?? [];
+    this.#spectators = message.spectators ?? [];
 
     // Changement de mission : le monde repart de zéro, et interpoler d'une
     // arène à l'autre ferait glisser les tanks à travers l'écran.

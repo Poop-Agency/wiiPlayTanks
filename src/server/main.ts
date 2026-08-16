@@ -147,7 +147,7 @@ const server = Bun.serve<SocketData>({
           }
 
           sockets.set(ws.data.playerId, ws);
-          const outgoing = room.join(ws.data.playerId, message.name, message.settings);
+          const outgoing = room.join(ws.data.playerId, message.name);
           dispatch(room, outgoing);
 
           // Un salon plein a refusé ce joueur (`bye` ci-dessus) : la connexion
@@ -161,6 +161,14 @@ const server = Bun.serve<SocketData>({
 
         case 'start':
           dispatch(room, room.start());
+          break;
+
+        case 'settings':
+          dispatch(room, room.configure(ws.data.playerId, message.settings));
+          break;
+
+        case 'admit':
+          dispatch(room, room.admit(ws.data.playerId, message.playerId));
           break;
 
         case 'input':

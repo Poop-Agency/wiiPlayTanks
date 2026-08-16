@@ -11,8 +11,7 @@
 
 import { TICK_RATE } from '@core/tick';
 import { TUNING } from '@core/tuning';
-import { CAMPAIGN_LENGTH, DEFAULT_CAMPAIGN_SETTINGS } from '@shared/campaign';
-import type { CampaignSettings } from '@shared/campaign';
+import { CAMPAIGN_LENGTH } from '@shared/campaign';
 import { exposeDebugBridge } from './debug-bridge';
 import type { RateProbe, TanksDebugBridge } from './debug-bridge';
 import { InputSampler } from './input/sampler';
@@ -28,6 +27,7 @@ import { BOARD_BOTTOM_BAND_PX, Canvas2DRenderer } from './render/canvas2d/Canvas
 import type { CampaignView, Session } from './session';
 import { Effects } from './render/effects';
 import { drawHud } from './ui/hud';
+import { LobbyPanel } from './ui/lobby-panel';
 import { TuningPanel } from './ui/tuning-panel';
 
 /**
@@ -41,24 +41,6 @@ function mountCanvas(): HTMLCanvasElement {
   const canvas = document.querySelector<HTMLCanvasElement>('#game');
   if (!canvas) throw new Error('Canevas #game introuvable dans index.html');
   return canvas;
-}
-
-/**
- * Règles de salon demandées dans l'URL.
- *
- * Le serveur ne les retient que si le salon est vierge — voir `Room.join`. Les
- * transmettre systématiquement est donc sans risque, et permet de repartager une
- * URL qui décrit complètement la partie.
- */
-function requestedSettings(params: URLSearchParams): CampaignSettings {
-  const bonus = Number(params.get('bonus'));
-
-  return {
-    bonusEveryMissions: Number.isInteger(bonus)
-      ? Math.max(bonus, 0)
-      : DEFAULT_CAMPAIGN_SETTINGS.bonusEveryMissions,
-    respawnEnemiesOnRetry: !params.has('persistant'),
-  };
 }
 
 /** Numéro de mission demandé dans l'URL, ramené dans les bornes de la campagne. */
@@ -121,7 +103,6 @@ function createSession(params: URLSearchParams): Session {
       playerId,
       room,
       name: params.get('nom') ?? `Joueur ${playerId.slice(0, 4)}`,
-      settings: requestedSettings(params),
       onMessage: (message) => network.handle(message),
       onClose: () => network.disconnected(),
     });
@@ -152,6 +133,16 @@ export function boot(params: URLSearchParams): void {
   const sampler = new InputSampler(canvas, (clientX, clientY) =>
     renderer.pointerToWorld(clientX, clientY),
   );
+
+  // Salon d'attente et acceptation des spectateurs. En DOM, parce qu'on y règle
+  // la partie plutôt que de la regarder — voir l'en-tête de `lobby-panel.ts`.
+  // Le panneau se cache tout seul hors du co-op : `status().lobby` n'y existe
+  // pas, et aucun spectateur n'y attend.
+  const lobbyPanel = new LobbyPanel({
+    configure: (settings) => session.configure?.(settings),
+    admit: (playerId) => session.admit?.(playerId),
+    start: () => session.restart(),
+  });
 
   // Reprendre une campagne perdue ou terminée n'est pas une intention de jeu :
   // ça ne passe donc pas par `InputCommand`, qui est ce qui partira sur le
@@ -400,8 +391,10 @@ export function boot(params: URLSearchParams): void {
       renderer.draw(grid, view, effects.view());
       renderer.drawDebug(session.world, panel.debug);
 
+      const status = session.status();
+      lobbyPanel.update(status);
+
       if (overlayCtx) {
-        const status = session.status();
         if (status) drawHud(overlayCtx, status);
         drawDiagnostics(overlayCtx);
       }

@@ -12,8 +12,8 @@
  */
 
 import { BOARD_TOP_BAND_PX } from '../render/canvas2d/Canvas2DRenderer';
-import type { CampaignView, LobbyView } from '../session';
-import { PLAYER_SEAT_COLORS, TANK_COLORS } from '../render/palette';
+import type { CampaignView } from '../session';
+import { TANK_COLORS } from '../render/palette';
 import type { TankColor } from '@core/state';
 import { enemyComposition } from '@shared/missions/composition';
 import { missionByNumber } from '@shared/missions/missions';
@@ -113,96 +113,6 @@ function drawTankPip(ctx: CanvasRenderingContext2D, x: number, y: number, filled
   ctx.fillStyle = filled ? TANK_COLORS.player : 'rgba(240, 230, 210, 0.22)';
   ctx.fillRect(-5, -3.5, 10, 7);
   ctx.fillRect(-1, -6.5, 8, 3);
-
-  ctx.restore();
-}
-
-/**
- * Salon d'attente, avant que la partie ne démarre.
- *
- * Remplace tout le HUD habituel plutôt que de s'y ajouter : tant que la
- * partie n'a pas commencé, ni la mission, ni la réserve, ni les munitions
- * n'ont de sens à afficher.
- */
-function drawLobby(ctx: CanvasRenderingContext2D, lobby: LobbyView): void {
-  const { width, height } = ctx.canvas;
-  const ready = lobby.players.length >= lobby.minPlayers;
-
-  ctx.save();
-  ctx.textBaseline = 'middle';
-
-  ctx.fillStyle = HUD.bannerBackground;
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.textAlign = 'center';
-  ctx.fillStyle = HUD.text;
-  ctx.font = 'bold 24px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText(`Salon « ${lobby.room} »`, width / 2, height / 2 - 96);
-
-  ctx.font = '14px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillStyle = ready ? HUD.bannerSuccess : HUD.textDim;
-  ctx.fillText(
-    ready
-      ? 'Entrée pour démarrer'
-      : `En attente d'au moins ${lobby.minPlayers} joueurs (${lobby.players.length}/${lobby.maxPlayers})`,
-    width / 2,
-    height / 2 - 66,
-  );
-
-  const rowHeight = 28;
-  const firstRow = height / 2 - 20;
-
-  lobby.players.forEach((player, index) => {
-    const y = firstRow + index * rowHeight;
-    const color = TANK_COLORS[PLAYER_SEAT_COLORS[index] ?? 'player'];
-
-    ctx.fillStyle = player.connected ? color : 'rgba(240, 230, 210, 0.25)';
-    ctx.fillRect(width / 2 - 100, y - 7, 14, 14);
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = player.connected ? HUD.text : HUD.textDim;
-    ctx.font = '15px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText(
-      player.connected ? player.name : `${player.name} (hors ligne)`,
-      width / 2 - 78,
-      y,
-    );
-  });
-
-  for (let seat = lobby.players.length; seat < lobby.maxPlayers; seat++) {
-    const y = firstRow + seat * rowHeight;
-
-    ctx.fillStyle = 'rgba(240, 230, 210, 0.12)';
-    ctx.fillRect(width / 2 - 100, y - 7, 14, 14);
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = HUD.textDim;
-    ctx.font = '15px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('en attente…', width / 2 - 78, y);
-  }
-
-  // Les règles du salon, sous la liste : elles sont choisies par celui qui
-  // l'ouvre, et personne d'autre ne doit les découvrir en pleine partie.
-  const rules: string[] = [
-    lobby.settings.bonusEveryMissions > 0
-      ? `tank bonus toutes les ${lobby.settings.bonusEveryMissions} missions`
-      : 'aucun tank bonus',
-    lobby.settings.respawnEnemiesOnRetry
-      ? 'ennemis rechargés à chaque tentative'
-      : 'les ennemis abattus ne reviennent pas',
-  ];
-
-  ctx.textAlign = 'center';
-  ctx.fillStyle = HUD.textDim;
-  ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText(rules.join('  ·  '), width / 2, firstRow + lobby.maxPlayers * rowHeight + 12);
-
-  if (lobby.error) {
-    ctx.textAlign = 'center';
-    ctx.fillStyle = HUD.bannerFailure;
-    ctx.font = 'bold 14px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText(lobby.error, width / 2, firstRow + lobby.maxPlayers * rowHeight + 16);
-  }
 
   ctx.restore();
 }
@@ -373,8 +283,12 @@ function drawScoreboard(
 
 /** Dessine le HUD par-dessus l'image de jeu. */
 export function drawHud(ctx: CanvasRenderingContext2D, view: CampaignView): void {
+  // Le salon d'attente est désormais du DOM — voir `lobby-panel.ts`. On ne
+  // dessine donc rien ici, mais on garde le fond : le panneau se pose dessus, et
+  // le plateau d'attente n'a rien à montrer.
   if (view.lobby) {
-    drawLobby(ctx, view.lobby);
+    ctx.fillStyle = HUD.bannerBackground;
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     return;
   }
 

@@ -329,14 +329,25 @@ describe('tableau des scores', () => {
     expect(runner.scores.get('a')).toBe(first + second);
   });
 
-  test('un coéquipier qui arrive en cours de partie ne fait perdre le score de personne', () => {
-    // L'arrivée libre reconstruit le monde pour donner un point de départ au
-    // nouveau venu : tous les compteurs de tanks repartent à zéro au passage.
+  test('un coéquipier inscrit n\'entre qu\'à la mission suivante', () => {
+    // Installer un tank en pleine mission suppose de rouvrir l'arène, donc de
+    // replacer tout le monde au milieu du combat. L'inscrit attend, et le monde
+    // courant n'en sait rien.
     const runner = started(['a']);
     const scored = wipeEnemies(runner, 'a');
+    const before = runner.world.tanks.filter((tank) => tank.playerId !== null).length;
 
-    runner.addPlayer('b');
+    runner.enqueuePlayer('b');
 
+    expect(runner.world.tanks.filter((tank) => tank.playerId !== null)).toHaveLength(before);
+    expect(runner.tankOf('b')).toBeUndefined();
+    expect(runner.joiningPlayerIds).toEqual(['b']);
+
+    advanceUntil(runner, () => runner.campaign.mission === 2);
+
+    expect(runner.tankOf('b')).toBeDefined();
+    expect(runner.joiningPlayerIds).toHaveLength(0);
+    // Et le score de celui qui jouait déjà a traversé le rechargement.
     expect(runner.scores.get('a')).toBe(scored);
     expect(runner.scores.get('b')).toBe(0);
   });
